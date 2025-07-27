@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+</head>
+<body>
+    <h1>WebSocket Connection Test</h1>
+    <div id="status">Disconnected</div>
+    <div id="messages"></div>
+    
+    <button onclick="connectTest()">Connect to Test Endpoint</button>
+    <button onclick="connectTask()">Connect to Task Endpoint</button>
+    <button onclick="disconnect()">Disconnect</button>
+    
+    <script>
+        let ws = null;
+        const statusDiv = document.getElementById('status');
+        const messagesDiv = document.getElementById('messages');
+        
+        function log(message) {
+            console.log(message);
+            messagesDiv.innerHTML += '<div>' + new Date().toLocaleTimeString() + ': ' + message + '</div>';
+        }
+        
+        function connectTest() {
+            disconnect();
+            
+            const wsUrl = 'ws://localhost:8010/api/v1/research/test';
+            log('Connecting to: ' + wsUrl);
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = function(event) {
+                statusDiv.textContent = 'Connected to Test';
+                statusDiv.style.color = 'green';
+                log('WebSocket connected to test endpoint');
+            };
+            
+            ws.onmessage = function(event) {
+                log('Received: ' + event.data);
+            };
+            
+            ws.onclose = function(event) {
+                statusDiv.textContent = 'Disconnected';
+                statusDiv.style.color = 'red';
+                log('WebSocket closed. Code: ' + event.code + ', Reason: ' + event.reason);
+            };
+            
+            ws.onerror = function(event) {
+                log('WebSocket error: ' + JSON.stringify(event));
+            };
+        }
+        
+        function connectTask() {
+            disconnect();
+            
+            const taskId = 'test-task-' + Date.now();
+            const wsUrl = 'ws://localhost:8010/api/v1/research/ws/' + taskId;
+            log('Connecting to: ' + wsUrl);
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = function(event) {
+                statusDiv.textContent = 'Connected to Task';
+                statusDiv.style.color = 'green';
+                log('WebSocket connected to task endpoint');
+            };
+            
+            ws.onmessage = function(event) {
+                log('Received: ' + event.data);
+            };
+            
+            ws.onclose = function(event) {
+                statusDiv.textContent = 'Disconnected';
+                statusDiv.style.color = 'red';
+                log('WebSocket closed. Code: ' + event.code + ', Reason: ' + event.reason);
+            };
+            
+            ws.onerror = function(event) {
+                log('WebSocket error: ' + JSON.stringify(event));
+            };
+        }
+        
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+    </script>
+</body>
+</html>

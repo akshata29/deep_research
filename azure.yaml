@@ -1,0 +1,54 @@
+# Azure Developer CLI configuration for Deep Research application
+name: deep-research
+metadata:
+  template: deep-research-template
+services:
+  backend:
+    project: ./backend
+    language: python
+    host: containerapp
+    docker:
+      path: ./backend/Dockerfile
+      context: ./backend
+  frontend:
+    project: ./frontend
+    language: js
+    host: staticwebapp
+    dist: build
+hooks:
+  predeploy:
+    windows:
+      shell: pwsh
+      run: |
+        echo "Preparing deployment..."
+        # Backend preparation
+        cd backend
+        pip install -r requirements.txt
+        cd ..
+        # Frontend preparation  
+        cd frontend
+        npm install
+        npm run build
+        cd ..
+    posix:
+      shell: sh
+      run: |
+        echo "Preparing deployment..."
+        # Backend preparation
+        cd backend
+        pip install -r requirements.txt
+        cd ..
+        # Frontend preparation
+        cd frontend
+        npm install
+        npm run build
+        cd ..
+  postdeploy:
+    windows:
+      shell: pwsh
+      run: |
+        echo "Deployment completed successfully!"
+    posix:
+      shell: sh
+      run: |
+        echo "Deployment completed successfully!"

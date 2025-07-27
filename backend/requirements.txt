@@ -1,0 +1,61 @@
+# Core API framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Azure SDK packages for AI Foundry and other services
+azure-ai-projects==1.0.0b4
+azure-identity==1.15.0
+azure-keyvault-secrets==4.7.0
+azure-cosmos==4.5.1
+azure-storage-blob==12.19.0
+azure-monitor-opentelemetry==1.2.0
+
+# AI and ML packages
+openai==1.6.1
+azure-ai-inference==1.0.0b1
+langchain==0.1.0
+langchain-community==0.0.13
+
+# Document processing and export
+markdown==3.5.1
+reportlab==4.0.7
+python-pptx==0.6.23
+jinja2==3.1.2
+pypandoc==1.12
+
+# HTTP and async support
+httpx==0.25.2
+aiofiles==23.2.1
+websockets==12.0
+
+# Data processing
+pandas==2.1.4
+numpy==1.26.2
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-mock==3.12.0
+httpx==0.25.2
+
+# Development tools
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+mypy==1.7.1
+click==8.1.7
+
+# CORS support
+fastapi-cors==0.0.6
+
+# Environment configuration
+python-dotenv==1.0.0
+
+# Logging
+structlog==23.2.0
+
+# Rate limiting
+slowapi==0.1.9
+limits==3.7.0
