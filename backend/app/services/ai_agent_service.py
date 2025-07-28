@@ -234,39 +234,68 @@ class AIAgentService:
                             if tool_spec == "bing_grounding":
                                 # Use the bing grounding tool definitions as per Microsoft documentation
                                 if self.bing_tool:
-                                    agent_tools.extend(self.bing_tool.definitions)
+                                    try:
+                                        agent_tools.extend(self.bing_tool.definitions)
+                                        logger.info("Added Bing grounding tool to agent", name=name)
+                                    except Exception as tool_error:
+                                        logger.error("Failed to add Bing grounding tool", error=str(tool_error), name=name)
+                                        # Continue without the tool rather than failing
                                 else:
-                                    logger.warning("Bing grounding tool not available - no connection configured")
+                                    logger.warning("Bing grounding tool not available - no connection configured", name=name)
                             elif tool_spec == "function":
                                 # For function tools, we need to provide the function definition
                                 # For now, skip function tools as they need specific function schemas
-                                logger.warning("Function tools require specific function definitions - skipping")
+                                logger.warning("Function tools require specific function definitions - skipping", name=name)
                             elif tool_spec == "code_interpreter":
                                 agent_tools.append({"type": "code_interpreter"})
                             elif tool_spec in self.available_tools:
-                                tool = self.available_tools[tool_spec]
-                                agent_tools.extend(tool.definitions)
+                                try:
+                                    tool = self.available_tools[tool_spec]
+                                    agent_tools.extend(tool.definitions)
+                                    logger.info("Added tool to agent", tool=tool_spec, name=name)
+                                except Exception as tool_error:
+                                    logger.error("Failed to add tool", tool=tool_spec, error=str(tool_error), name=name)
                             else:
-                                logger.warning(f"Unknown tool requested: {tool_spec}")
+                                logger.warning(f"Unknown tool requested: {tool_spec}", name=name)
                 
                 # Get model-specific parameters
                 agent_params = self._get_agent_params_for_model(model, temperature, max_tokens)
                 
-                # Create the agent using Azure AI Foundry pattern
-                agent_definition = self.ai_client.agents.create_agent(
-                    model=model,
+                logger.info(
+                    "Creating agent with parameters",
                     name=name,
-                    instructions=instructions,
-                    tools=agent_tools,
-                    **agent_params
+                    model=model,
+                    tools_count=len(agent_tools),
+                    agent_params=agent_params
                 )
                 
-                logger.info(f"Created new agent: {name} with ID: {agent_definition.id}")
-                
-                # Cache the agent
-                self.agents[name] = agent_definition
-                
-                return agent_definition
+                # Create the agent using Azure AI Foundry pattern
+                try:
+                    agent_definition = self.ai_client.agents.create_agent(
+                        model=model,
+                        name=name,
+                        instructions=instructions,
+                        tools=agent_tools,
+                        **agent_params
+                    )
+                    
+                    logger.info(f"Created new agent: {name} with ID: {agent_definition.id}")
+                    
+                    # Cache the agent
+                    self.agents[name] = agent_definition
+                    
+                    return agent_definition
+                    
+                except Exception as agent_create_error:
+                    logger.error(
+                        "Failed to create agent with Azure AI service",
+                        name=name,
+                        model=model,
+                        tools_count=len(agent_tools),
+                        error=str(agent_create_error),
+                        exc_info=True
+                    )
+                    raise
             
         except Exception as e:
             logger.error(
@@ -429,24 +458,35 @@ class AIAgentService:
             if not self.ai_client:
                 raise AzureError("AI Project client not initialized")
             
+            logger.info("Getting run result", run_id=run.id, status=run.status)
+            
             if run.status == "failed":
-                error_msg = f"Run failed: {run.last_error}"
-                logger.error("Run failed", run_id=run.id, error=run.last_error)
-                raise AzureError(error_msg)
+                error_details = getattr(run, 'last_error', 'Unknown error')
+                logger.error("Run failed", run_id=run.id, error=error_details)
+                raise AzureError(f"Run failed: {error_details}")
             
             if run.status != "completed":
+                logger.warning("Run not completed", run_id=run.id, status=run.status)
                 raise ValueError(f"Run is not completed (status: {run.status})")
             
             # Get messages from the thread using Azure AI Foundry pattern
-            messages = self.ai_client.agents.messages.list(thread_id=run.thread_id)
+            try:
+                messages = self.ai_client.agents.messages.list(thread_id=run.thread_id)
+                # Convert to list to work with the messages
+                messages_list = list(messages)
+                logger.debug("Retrieved messages", run_id=run.id, message_count=len(messages_list))
+            except Exception as msg_error:
+                logger.error("Failed to retrieve messages", run_id=run.id, error=str(msg_error))
+                raise AzureError(f"Failed to retrieve messages: {str(msg_error)}")
             
             # Find the latest assistant message
             assistant_messages = [
-                msg for msg in messages
+                msg for msg in messages_list
                 if msg.role == "assistant"
             ]
             
             if not assistant_messages:
+                logger.warning("No assistant messages found", run_id=run.id)
                 return "No response generated"
             
             # Return the content of the latest message
@@ -466,16 +506,19 @@ class AIAgentService:
                             text_parts.append(str(item['text']))
                     else:
                         text_parts.append(str(item))
-                return '\n'.join(text_parts)
+                result = '\n'.join(text_parts)
             elif isinstance(content, str):
-                return content
+                result = content
             else:
-                return str(content)
+                result = str(content)
+            
+            logger.info("Successfully extracted run result", run_id=run.id, result_length=len(result))
+            return result
             
         except Exception as e:
             logger.error(
                 "Failed to get run result",
-                run_id=run.id,
+                run_id=getattr(run, 'id', 'unknown'),
                 error=str(e),
                 exc_info=True
             )
@@ -537,39 +580,66 @@ class AIAgentService:
 
     async def generate_response(
         self, 
+        system_prompt:str,
         prompt: str, 
         model_name: str, 
+        agent_name: str,
         max_tokens: Optional[int] = None,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        use_bing_grounding: bool = False
     ) -> str:
         """
         Generate a response for a simple prompt using the AI agent.
         
-        This is a convenience method for simple text generation without
-        managing agents and threads manually.
+        This method creates permanent agents that are reused across requests.
         
         Args:
             prompt: The input prompt
             model_name: Model to use for generation
+            agent_name: Unique name for the agent (permanent)
             max_tokens: Maximum tokens in response
             temperature: Generation temperature
+            use_bing_grounding: Whether to enable Bing grounding tool
             
         Returns:
             Generated response text
         """
         try:
-            logger.info("Generating response", model=model_name, prompt_length=len(prompt))
+            logger.info("Generating response", model=model_name, agent_name=agent_name, prompt_length=len(prompt), use_bing_grounding=use_bing_grounding)
             
-            # Create a temporary agent for this request
-            agent_name = f"temp_agent_{hash(prompt) % 1000}"
+            # Prepare tools for the agent
+            tools = []
+            if use_bing_grounding:
+                if self.bing_tool and self.bing_connection_id:
+                    tools.append("bing_grounding")
+                    logger.info("Enabling Bing grounding for agent", agent_name=agent_name, connection_id=self.bing_connection_id)
+                else:
+                    logger.warning("Bing grounding requested but not available - proceeding without it", agent_name=agent_name)
+                    use_bing_grounding = False
             
-            # Create agent (don't pass max_tokens here, it's handled in the run)
-            agent = await self.create_agent(
-                name=agent_name,
-                instructions="You are a helpful AI assistant. Provide clear, accurate, and well-structured responses.",
-                model=model_name,
-                temperature=temperature
-            )
+            # Create or reuse agent (create_agent already handles checking if agent exists)
+            try:
+                agent = await self.create_agent(
+                    name=agent_name,
+                    instructions=system_prompt,
+                    model=model_name,
+                    temperature=temperature,
+                    tools=tools if tools else None
+                )
+            except Exception as agent_error:
+                logger.error("Failed to create agent, trying without tools", error=str(agent_error), agent_name=agent_name)
+                # If agent creation fails with tools, try without tools
+                if use_bing_grounding:
+                    logger.info("Retrying agent creation without Bing grounding", agent_name=agent_name)
+                    agent = await self.create_agent(
+                        name=f"{agent_name}-notool",
+                        instructions="You are a helpful AI assistant. Provide clear, accurate, and well-structured responses.",
+                        model=model_name,
+                        temperature=temperature,
+                        tools=None
+                    )
+                else:
+                    raise
             
             # Create thread
             thread = await self.create_thread()
@@ -590,17 +660,10 @@ class AIAgentService:
             # Get result
             response = await self.get_run_result(run)
             
-            # Cleanup temporary agent
-            await self.cleanup_agent(agent_name)
-            
-            logger.info("Response generated successfully", response_length=len(response))
+            # Don't cleanup agent - keep it permanent for reuse
+            logger.info("Response generated successfully", agent_name=agent_name, response_length=len(response))
             return response
             
         except Exception as e:
-            logger.error("Failed to generate response", error=str(e), model=model_name)
-            # Try to cleanup on error
-            try:
-                await self.cleanup_agent(agent_name)
-            except:
-                pass
+            logger.error("Failed to generate response", error=str(e), model=model_name, agent_name=agent_name)
             raise

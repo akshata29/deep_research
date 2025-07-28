@@ -7,6 +7,7 @@ import {
   useLocalSettings 
 } from './useApi';
 import { ResearchRequest } from '@/types';
+import { extractQuestionsFromText } from '@/utils/jsonContentParser';
 
 export interface DeepResearchState {
   // Current phase of research
@@ -166,8 +167,12 @@ export const useDeepResearch = () => {
         language: 'en'
       };
 
+      // Extract questions as array from the questions text
+      const questionsArray = extractQuestionsFromText(state.questions);
+      
       const response = await createResearchPlanMutation.mutateAsync({
         topic: state.topic,
+        questions: questionsArray,
         feedback: feedback,
         request: request
       });

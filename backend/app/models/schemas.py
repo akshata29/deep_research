@@ -228,6 +228,7 @@ class SuccessResponse(BaseModel):
 class ResearchPlanRequest(BaseModel):
     """Request for creating research plan."""
     topic: str = Field(..., description="Research topic")
+    questions: List[str] = Field(..., description="List of follow-up questions")
     feedback: str = Field(..., description="User feedback on questions")
     request: ResearchRequest = Field(..., description="Base research request configuration")
 

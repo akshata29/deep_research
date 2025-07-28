@@ -29,6 +29,7 @@ import {
 import { Loader2, CheckCircle, AlertCircle, Clock } from 'lucide-react';
 import { useDeepResearchContext } from '@/contexts/DeepResearchContext';
 import ReactMarkdown from 'react-markdown';
+import { parsePlanToMarkdown, parseFindingsToMarkdown } from '@/utils/jsonContentParser';
 
 const formSchema = z.object({
   suggestion: z.string().optional(),
@@ -113,7 +114,7 @@ export const SearchResult: React.FC = () => {
               borderLeft="4px solid"
               borderColor="green.500"
             >
-              <ReactMarkdown>{reportPlan}</ReactMarkdown>
+              <ReactMarkdown>{parsePlanToMarkdown(reportPlan)}</ReactMarkdown>
             </Box>
           </Box>
 
@@ -158,7 +159,10 @@ export const SearchResult: React.FC = () => {
                         </Text>
                       </Box>
                       {task.learning && (
-                        <ReactMarkdown>{task.learning}</ReactMarkdown>
+                        <Box>
+                          <Text fontWeight="semibold" mb={2}>Research Findings:</Text>
+                          <ReactMarkdown>{parseFindingsToMarkdown(task.learning)}</ReactMarkdown>
+                        </Box>
                       )}
                     </AccordionPanel>
                   </AccordionItem>

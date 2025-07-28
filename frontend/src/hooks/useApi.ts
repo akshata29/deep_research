@@ -105,8 +105,8 @@ export const useGenerateQuestions = () => {
 
 export const useCreateResearchPlan = () => {
   return useMutation({
-    mutationFn: ({ topic, feedback, request }: { topic: string; feedback: string; request: ResearchRequest }) =>
-      apiClient.createResearchPlan(topic, feedback, request),
+    mutationFn: ({ topic, questions, feedback, request }: { topic: string; questions: string[]; feedback: string; request: ResearchRequest }) =>
+      apiClient.createResearchPlan(topic, questions, feedback, request),
   });
 };
 

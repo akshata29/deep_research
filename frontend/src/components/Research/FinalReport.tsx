@@ -17,10 +17,17 @@ import {
   FormLabel,
   Icon,
   useColorModeValue,
+  UnorderedList,
+  OrderedList,
+  ListItem,
+  Code
 } from '@chakra-ui/react';
 import { Loader2, Download, FileText } from 'lucide-react';
 import { useDeepResearchContext } from '@/contexts/DeepResearchContext';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import { parseResearchContent, parseFinalReportToMarkdown } from '../../utils/jsonContentParser';
 
 const formSchema = z.object({
   requirement: z.string().optional(),
@@ -53,7 +60,10 @@ export const FinalReport: React.FC = () => {
   const handleExport = () => {
     if (!finalReport) return;
     
-    const blob = new Blob([finalReport], { type: 'text/markdown' });
+    // Parse and format the content for export
+    const formattedContent = parseFinalReportToMarkdown(finalReport);
+    
+    const blob = new Blob([formattedContent], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -106,7 +116,114 @@ export const FinalReport: React.FC = () => {
                 maxH="500px"
                 overflowY="auto"
               >
-                <ReactMarkdown>{finalReport}</ReactMarkdown>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeHighlight]}
+                  components={{
+                    table: ({ children }) => (
+                      <Box overflowX="auto" mb={4}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          {children}
+                        </table>
+                      </Box>
+                    ),
+                    th: ({ children }) => (
+                      <th style={{ 
+                        border: '1px solid #e2e8f0', 
+                        padding: '8px', 
+                        backgroundColor: '#f7fafc',
+                        fontWeight: '600',
+                        textAlign: 'left'
+                      }}>
+                        {children}
+                      </th>
+                    ),
+                    td: ({ children }) => (
+                      <td style={{ 
+                        border: '1px solid #e2e8f0', 
+                        padding: '8px'
+                      }}>
+                        {children}
+                      </td>
+                    ),
+                    h1: ({ children }) => (
+                      <Heading as="h1" size="xl" color="blue.600" mt={6} mb={4}>
+                        {children}
+                      </Heading>
+                    ),
+                    h2: ({ children }) => (
+                      <Heading as="h2" size="lg" color="blue.500" mt={5} mb={3}>
+                        {children}
+                      </Heading>
+                    ),
+                    h3: ({ children }) => (
+                      <Heading as="h3" size="md" color="gray.700" mt={4} mb={2}>
+                        {children}
+                      </Heading>
+                    ),
+                    p: ({ children }) => (
+                      <Text mb={3} lineHeight="1.7">
+                        {children}
+                      </Text>
+                    ),
+                    ul: ({ children }) => (
+                      <UnorderedList mb={4} pl={6}>
+                        {children}
+                      </UnorderedList>
+                    ),
+                    ol: ({ children }) => (
+                      <OrderedList mb={4} pl={6}>
+                        {children}
+                      </OrderedList>
+                    ),
+                    li: ({ children }) => (
+                      <ListItem mb={1}>
+                        {children}
+                      </ListItem>
+                    ),
+                    strong: ({ children }) => (
+                      <Text as="strong" fontWeight="semibold" color="gray.800">
+                        {children}
+                      </Text>
+                    ),
+                    blockquote: ({ children }) => (
+                      <Box
+                        borderLeft="4px solid"
+                        borderColor="blue.200"
+                        pl={4}
+                        ml={4}
+                        fontStyle="italic"
+                        mb={4}
+                      >
+                        {children}
+                      </Box>
+                    ),
+                    code: ({ children, className }) => {
+                      const isBlock = className?.includes('language-');
+                      if (isBlock) {
+                        return (
+                          <Box
+                            as="pre"
+                            bg="gray.100"
+                            p={4}
+                            borderRadius="md"
+                            overflowX="auto"
+                            mb={4}
+                          >
+                            <code>{children}</code>
+                          </Box>
+                        );
+                      }
+                      return (
+                        <Code bg="gray.100" px={1} borderRadius="sm" fontSize="sm">
+                          {children}
+                        </Code>
+                      );
+                    }
+                  }}
+                >
+                  {parseFinalReportToMarkdown(finalReport)}
+                </ReactMarkdown>
               </Box>
             </Box>
           )}

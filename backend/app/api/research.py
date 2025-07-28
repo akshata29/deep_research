@@ -35,6 +35,22 @@ active_tasks: Dict[str, Dict] = {}
 websocket_connections: Dict[str, WebSocket] = {}
 
 
+system_prompt = f"""
+You are an expert researcher. Today is 'todaynow'. Follow these instructions when responding:
+
+- You may be asked to research subjects that is after your knowledge cutoff, assume the user is right when presented with news.
+- The user is a highly experienced analyst, no need to simplify it, be as detailed as possible and make sure your response is correct.
+- Be highly organized.
+- Suggest solutions that I didn't think about.
+- Be proactive and anticipate my needs.
+- Treat me as an expert in all subject matter.
+- Mistakes erode my trust, so be accurate and thorough.
+- Provide detailed explanations, I'm comfortable with lots of detail.
+- Value good arguments over authorities, the source is irrelevant.
+- Consider new technologies and contrarian ideas, not just the conventional wisdom.
+- You may use high levels of speculation or prediction, just flag it for me.
+"""
+
 async def get_azure_manager(request: Request) -> AzureServiceManager:
     """Dependency to get Azure service manager from app state."""
     if not hasattr(request.app.state, 'azure_manager'):
@@ -774,21 +790,29 @@ async def generate_questions(
         task_id = str(uuid.uuid4())
         
         # Create focused prompt for question generation
-        questions_prompt = f"""You are a research planning expert. For the research topic "{request.prompt}", generate 3-5 clarifying questions that would help create a comprehensive research plan. 
+        now = datetime.now().isoformat()
 
-Focus on:
-- Scope and boundaries of the research
-- Depth and specific aspects to explore  
-- Methodology and approach preferences
-- Target audience and use case
+        questions_prompt = f"""
+Given the following query from the user, ask at least 5 follow-up questions to clarify the research direction:
 
-Present the questions in a clear, numbered format. Each question should help refine the research direction."""
+<QUERY>
+{request.prompt}
+</QUERY>
 
-        # Use thinking model for question generation
+Questions need to be brief and concise. No need to output content that is irrelevant to the question.
+
+**Respond in the same language as the user's language**
+"""
+
+
+        # Use thinking model for question generation with unique agent name
         ai_service = AIAgentService(azure_manager)
+        agent_name = f"thinking-agent-questions-{request.models_config.get('thinking', 'gpt-4').replace('-', '')}"
         response_text = await ai_service.generate_response(
+            system_prompt=system_prompt.replace("'todaynow'", now),
             prompt=questions_prompt,
             model_name=request.models_config.get("thinking", "gpt-4"),
+            agent_name=agent_name,
             max_tokens=2048
         )
 
@@ -833,22 +857,41 @@ async def create_research_plan(
     """Create a research plan based on topic and feedback."""
     try:
         task_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        # Format questions for better prompt readability
+        formatted_questions = '\n'.join([f"{i+1}. {q}" for i, q in enumerate(request_data.questions)])
         
-        plan_prompt = f"""Based on the research topic "{request_data.topic}" and the following feedback: "{request_data.feedback}", create a detailed research plan.
+        plan_prompt = f"""
+Given the following query from the user:
+<QUERY> "{request_data.topic}"
+Follow-up Questions:
+{formatted_questions}
+Follow-up Feedback: "{request_data.feedback}"
+</QUERY>
 
-Include:
-1. Research objectives and goals
-2. Key questions to explore and investigate
-3. Methodology and approach strategy
-4. Expected outcomes and deliverables
-5. Information sources to prioritize
+Generate a list of sections for the report based on the topic and feedback.
+Your plan should be tight and focused with NO overlapping sections or unnecessary filler. Each section needs a sentence summarizing its content.
 
-Format as a structured, actionable research plan that will guide the information gathering phase."""
+Integration guidelines:
+<GUIDELINES>
+- Ensure each section has a distinct purpose with no content overlap.
+- Combine related concepts rather than separating them.
+- CRITICAL: Every section MUST be directly relevant to the main topic.
+- Avoid tangential or loosely related sections that don't directly address the core topic.
+</GUIDELINES>
+
+Before submitting, review your structure to ensure it has no redundant sections and follows a logical flow.
+
+**Respond in the same language as the user's language**"
+"""
 
         ai_service = AIAgentService(azure_manager)
+        agent_name = f"thinking-agent-plan-{request_data.request.models_config.get('thinking', 'gpt-4').replace('-', '')}"
         response_text = await ai_service.generate_response(
+            system_prompt=system_prompt.replace("'todaynow'", now),
             prompt=plan_prompt,
             model_name=request_data.request.models_config.get("thinking", "gpt-4"),
+            agent_name=agent_name,
             max_tokens=3072
         )
 
@@ -892,33 +935,153 @@ async def execute_research(
     """Execute research based on the plan."""
     try:
         task_id = str(uuid.uuid4())
-        
-        # Create research execution prompt
-        research_prompt = f"""Execute comprehensive research based on this plan: {request_data.plan}
-        
-Original topic: {request_data.topic}
+        now = datetime.now().isoformat()
 
-Conduct thorough research using web search and provide detailed findings with sources. Focus on gathering factual, up-to-date information that addresses the research objectives."""
+        # Step 1: Generate search queries (without Bing grounding)
+        research_prompt = f"""
+This is the report plan after user confirmation:
+<PLAN>
+    {request_data.plan}
+</PLAN>
 
-        # Create orchestrator for actual research execution
-        orchestrator = ResearchOrchestrator(
-            azure_manager=azure_manager,
-            task_id=task_id,
-            config=request_data.request
+Based on previous report plan, generate a list of Serp queries to further research the topic. Make sure each query is unique and not similar to each other.
+
+You MUST respond in **JSON** matching this **JSON schema**:
+
+Expected output:
+
+\`\`\`json
+[
+  {{
+    "query": "This is a sample query.",
+    "researchGoal": "This is the reason for the query."
+  }}
+]
+\`\`\`
+"""
+
+        ai_service = AIAgentService(azure_manager)
+        agent_name = f"thinking-agent-execute-{request_data.request.models_config.get('thinking', 'gpt-4').replace('-', '')}"
+        
+        # Step 1: Generate queries without Bing grounding
+        logger.info("Step 1: Generating research queries", task_id=task_id)
+        queries_response = await ai_service.generate_response(
+            system_prompt=system_prompt.replace("'todaynow'", now),
+            prompt=research_prompt,
+            model_name=request_data.request.models_config.get("thinking", "gpt-4"),
+            agent_name=agent_name,
+            max_tokens=4096,
+            use_bing_grounding=False  # No Bing grounding for query generation
         )
+
+        # Parse the JSON response to extract queries
+        try:
+            import json
+            queries_data = json.loads(queries_response.strip())
+            if not isinstance(queries_data, list):
+                raise ValueError("Response is not a JSON array")
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error("Failed to parse queries JSON", task_id=task_id, response=queries_response[:500], error=str(e))
+            # Fallback: treat as single query
+            queries_data = [{"query": request_data.topic, "researchGoal": "General research"}]
+
+        logger.info("Generated queries", task_id=task_id, query_count=len(queries_data))
+
+        # Step 2: Execute each query with Bing grounding
+        aggregated_findings = []
+        search_agent_name = f"task-agent-search-{request_data.request.models_config.get('task', 'gpt-4').replace('-', '')}"
         
-        # Update the orchestrator's prompt
-        orchestrator.config.prompt = research_prompt
+        for i, query_item in enumerate(queries_data):
+            query = query_item.get("query", "")
+            research_goal = query_item.get("researchGoal", "")
+            
+            if not query.strip():
+                continue
+                
+            logger.info(f"Step 2: Executing query {i+1}/{len(queries_data)}", task_id=task_id, query=query[:100])
+            
+            # Execute individual query with Bing grounding
+            query_prompt = f"""
+Research Query: {query}
+Research Goal: {research_goal}
+
+Please provide comprehensive research findings for this specific query. Include relevant data, statistics, and factual information.
+"""
+            
+            try:
+                query_response = await ai_service.generate_response(
+                    system_prompt=system_prompt.replace("'todaynow'", now),
+                    prompt=query_prompt,
+                    model_name=request_data.request.models_config.get("task", "gpt-4"),
+                    agent_name=search_agent_name,
+                    max_tokens=3072,
+                    use_bing_grounding=True  # Enable Bing grounding for individual queries
+                )
+                
+                # Aggregate the findings
+                finding_entry = {
+                    "query": query,
+                    "research_goal": research_goal,
+                    "findings": query_response,
+                    "query_number": i + 1
+                }
+                aggregated_findings.append(finding_entry)
+                
+                logger.info(f"Completed query {i+1}/{len(queries_data)}", task_id=task_id, findings_length=len(query_response))
+                
+            except Exception as e:
+                logger.error(f"Failed to execute query {i+1}", task_id=task_id, query=query, error=str(e))
+                # Continue with other queries even if one fails
+                finding_entry = {
+                    "query": query,
+                    "research_goal": research_goal,
+                    "findings": f"Error executing query: {str(e)}",
+                    "query_number": i + 1
+                }
+                aggregated_findings.append(finding_entry)
+
+        # Format aggregated findings into a comprehensive report
+        findings_text = "# Research Execution Results\n\n"
+        findings_text += f"**Total Queries Executed:** {len(aggregated_findings)}\n\n"
         
-        # Execute research synchronously and get the report
-        await orchestrator.execute_research()
-        research_report = orchestrator.get_report()
+        for finding in aggregated_findings:
+            findings_text += f"## Query {finding['query_number']}: {finding['query']}\n\n"
+            findings_text += f"**Research Goal:** {finding['research_goal']}\n\n"
+            findings_text += f"**Findings:**\n{finding['findings']}\n\n"
+            findings_text += "---\n\n"
+
+        # Create report with aggregated research findings
+        report = ResearchReport(
+            task_id=task_id,
+            title=f"Research Execution: {request_data.topic[:50]}...",
+            executive_summary=f"Comprehensive research findings from {len(aggregated_findings)} targeted queries with real-time data",
+            sections=[
+                ResearchSection(
+                    title="Research Findings",
+                    content=findings_text,
+                    sources=[],
+                    confidence_score=0.9,
+                    word_count=len(findings_text.split())
+                )
+            ],
+            conclusions="Research execution completed with current information from multiple targeted searches",
+            sources=[],
+            metadata={
+                "phase": "execute", 
+                "topic": request_data.topic, 
+                "plan": request_data.plan,
+                "queries_executed": len(aggregated_findings),
+                "aggregated_findings": aggregated_findings  # Store structured data for final report
+            },
+            word_count=len(findings_text.split()),
+            reading_time_minutes=max(1, len(findings_text.split()) // 200)
+        )
 
         return ResearchResponse(
             task_id=task_id,
             status=ResearchStatus.COMPLETED,
-            message="Research execution completed successfully",
-            report=research_report
+            message=f"Research execution completed successfully with {len(aggregated_findings)} queries",
+            report=report
         )
 
     except Exception as e:
@@ -934,78 +1097,68 @@ async def generate_final_report(
     """Generate the final research report."""
     try:
         task_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
         
-        report_prompt = f"""Write a comprehensive, beautifully formatted research report in Markdown based on:
+        # Extract aggregated findings from the research execution if available
+        aggregated_data = ""
+        if request_data.findings:
+            # Use the findings directly (they should contain the aggregated research data)
+            aggregated_data = request_data.findings
+        else:
+            aggregated_data = "No detailed findings provided."
+        
+        report_prompt = f"""
+You are the report‑formatter. Given:
 
-**Topic:** {request_data.topic}
-**Research Plan:** {request_data.plan}
-**Research Findings:** {request_data.findings}
-{f"**Additional Requirements:** {request_data.requirement}" if request_data.requirement else ""}
+- **Topic:** {request_data.topic}  
+- **Research Plan Outline:** {request_data.plan}
+- **Detailed Research Findings:** 
+{aggregated_data}
+- **Additional Requirements:** {request_data.requirement}
 
-Create a professional research report with proper Markdown formatting including:
+Produce **only** a comprehensive Markdown document that exactly mirrors the slide order and structure required for the presentation:
 
-# Executive Summary
-A concise overview of key findings and recommendations
+# Company Snapshot  
+# Key Company Metrics  
+# Sales Mix  
+# Revenue by Segment  
+# Businesses Overview  
+# Stock Graph History  
+# Considerations  
+## Strengths  
+## Weaknesses  
+## Opportunities  
+## Risks  
+# Third‑Party Perspectives and Multiples  
+# Credit Perspectives  
+# Equity Perspectives  
+# Appendix: Board of Directors, Financial Statements and Other  
 
-## Table of Contents
-- Introduction
-- Methodology  
-- Key Findings
-- Analysis & Insights
-- Conclusions
-- Recommendations
-- Sources & References
+Under each heading, slot in the corresponding content from the research findings above, using tables, lists, and data as needed. This Markdown will be programmatically converted into PPTX. 
 
-## Introduction
-Clear background and context for the research
-
-## Methodology
-How the research was conducted
-
-## Key Findings
-### Finding 1: [Title]
-**Summary:** Brief description
-**Details:** Comprehensive analysis
-**Impact:** Significance and implications
-
-### Finding 2: [Title]
-[Continue pattern...]
-
-## Analysis & Insights
-Deep analysis with:
-- **Trends:** Key patterns identified
-- **Implications:** What this means
-- **Opportunities:** Areas for growth/improvement
-- **Challenges:** Potential obstacles
-
-## Conclusions
-Summary of the most important insights
-
-## Recommendations
-### Short-term Actions
-1. **Action 1:** Description and rationale
-2. **Action 2:** Description and rationale
-
-### Long-term Strategy
-1. **Strategy 1:** Description and rationale
-2. **Strategy 2:** Description and rationale
-
-## Sources & References
-List of all sources consulted
-
-Use proper Markdown formatting with headers (#, ##, ###), bold text (**text**), bullet points (-), numbered lists (1.), and code blocks when appropriate. Make it visually appealing and easy to read."""
+CRITICAL INSTRUCTIONS:
+- Use ONLY the headings listed above - do not add any other headings or free‑form sections
+- Include specific data, numbers, and facts from the research findings
+- Format financial data in tables where appropriate
+- Include recent developments and current market information
+- Ensure each section has substantial, actionable content based on the research
+- Do not include any explanatory text about the document structure
+"""
 
         ai_service = AIAgentService(azure_manager)
+        agent_name = f"thinking-agent-finalreport-{request_data.request.models_config.get('thinking', 'gpt-4').replace('-', '') if request_data.request else 'gpt4'}"
         response_text = await ai_service.generate_response(
+            system_prompt=system_prompt.replace("'todaynow'", now),
             prompt=report_prompt,
             model_name=request_data.request.models_config.get("thinking", "gpt-4") if request_data.request else "gpt-4",
-            max_tokens=6144
+            agent_name=agent_name,
+            max_tokens=8192  # Increased for comprehensive report
         )
 
         report = ResearchReport(
             task_id=task_id,
             title=f"Final Report: {request_data.topic[:50]}...",
-            executive_summary="Comprehensive research report with analysis and recommendations",
+            executive_summary="Comprehensive research report with analysis and recommendations based on detailed findings",
             sections=[
                 ResearchSection(
                     title="Final Research Report", 
@@ -1015,9 +1168,14 @@ Use proper Markdown formatting with headers (#, ##, ###), bold text (**text**), 
                     word_count=len(response_text.split())
                 )
             ],
-            conclusions="Research completed successfully",
+            conclusions="Research completed successfully with comprehensive analysis",
             sources=[],
-            metadata={"phase": "final_report", "topic": request_data.topic},
+            metadata={
+                "phase": "final_report", 
+                "topic": request_data.topic,
+                "plan": request_data.plan,
+                "findings_used": len(aggregated_data.split('\n')) if aggregated_data else 0
+            },
             word_count=len(response_text.split()),
             reading_time_minutes=max(1, len(response_text.split()) // 200)
         )
@@ -1025,7 +1183,7 @@ Use proper Markdown formatting with headers (#, ##, ###), bold text (**text**), 
         return ResearchResponse(
             task_id=task_id,
             status=ResearchStatus.COMPLETED,
-            message="Final report generated successfully",
+            message="Final report generated successfully with comprehensive findings",
             report=report
         )
 

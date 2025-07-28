@@ -19,6 +19,7 @@ import {
 } from '@chakra-ui/react';
 import { Download } from 'lucide-react';
 import { ResearchReport } from '@/types';
+import { parseResearchContent } from '@/utils/jsonContentParser';
 
 interface ReportViewerProps {
   report: ResearchReport;
@@ -108,7 +109,7 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report }) => {
                 </HStack>
               </CardHeader>
               <CardBody>
-                <MarkdownContent content={section.content} />
+                <MarkdownContent content={parseResearchContent(section.content)} />
               </CardBody>
             </Card>
           ))}

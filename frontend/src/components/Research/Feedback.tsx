@@ -22,6 +22,7 @@ import {
 import { Loader2 } from 'lucide-react';
 import { useDeepResearchContext } from '@/contexts/DeepResearchContext';
 import ReactMarkdown from 'react-markdown';
+import { parseQuestionsToMarkdown } from '@/utils/jsonContentParser';
 
 const formSchema = z.object({
   feedback: z.string().min(1, 'Feedback is required'),
@@ -87,7 +88,7 @@ export const Feedback: React.FC = () => {
               borderLeft="4px solid"
               borderColor="blue.500"
             >
-              <ReactMarkdown>{questions}</ReactMarkdown>
+              <ReactMarkdown>{parseQuestionsToMarkdown(questions)}</ReactMarkdown>
             </Box>
           </Box>
 

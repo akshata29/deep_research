@@ -7,7 +7,8 @@ import {
   ExportResponse,
   HealthStatus,
   ModelOption,
-  UserSettings
+  UserSettings,
+  ResearchPlanRequest
 } from '@/types';
 
 export class ApiClientError extends Error {
@@ -98,12 +99,14 @@ class ApiClient {
     return response.data;
   }
 
-  async createResearchPlan(topic: string, feedback: string, request: ResearchRequest): Promise<ResearchResponse> {
-    const response = await this.client.post<ResearchResponse>('/research/plan', {
+  async createResearchPlan(topic: string, questions: string[], feedback: string, request: ResearchRequest): Promise<ResearchResponse> {
+    const planRequest: ResearchPlanRequest = {
       topic,
+      questions,
       feedback,
       request
-    });
+    };
+    const response = await this.client.post<ResearchResponse>('/research/plan', planRequest);
     return response.data;
   }
 

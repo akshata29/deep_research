@@ -242,3 +242,25 @@ export interface UserSettings {
   themePreference?: string;
   enableTelemetry?: boolean;
 }
+
+// Phase-specific request types
+export interface ResearchPlanRequest {
+  topic: string;
+  questions: string[];
+  feedback: string;
+  request: ResearchRequest;
+}
+
+export interface ExecuteResearchRequest {
+  topic: string;
+  plan: string;
+  request: ResearchRequest;
+}
+
+export interface FinalReportRequest {
+  topic: string;
+  plan: string;
+  findings: string;
+  requirement?: string;
+  request?: ResearchRequest;
+}
