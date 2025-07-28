@@ -1,7 +1,7 @@
 // API Types matching the backend schemas
 
 export type ResearchDepth = 'quick' | 'standard' | 'deep';
-export type ExportFormat = 'markdown' | 'pdf' | 'docx' | 'pptx' | 'html' | 'json';
+export type ExportFormat = 'markdown' | 'pdf' | 'docx' | 'pptx' | 'html' | 'json' | 'custom-pptx';
 export type TaskStatus = 'pending' | 'thinking' | 'searching' | 'generating' | 'formatting' | 'completed' | 'failed';
 export type ExecutionMode = 'agents' | 'direct' | 'auto';
 

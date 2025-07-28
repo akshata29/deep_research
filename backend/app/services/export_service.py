@@ -967,3 +967,123 @@ class ExportService:
         except Exception as e:
             logger.error("Failed to generate HTML content", error=str(e))
             raise
+
+    async def create_custom_powerpoint(
+        self,
+        slides_data: Dict[str, Any],
+        topic: str,
+        template_name: str = "business"
+    ) -> str:
+        """
+        Create a custom PowerPoint presentation from structured slide data.
+        
+        Args:
+            slides_data: JSON structure containing slides with titles and content
+            topic: Research topic for the presentation title
+            template_name: PowerPoint template to use
+            
+        Returns:
+            Path to the generated PowerPoint file
+        """
+        try:
+            # Get template path
+            template_path = self.templates_dir / self.pptx_templates.get(template_name, "business_template.pptx")
+            
+            # Create presentation from template or new if template doesn't exist
+            if template_path.exists():
+                prs = Presentation(str(template_path))
+                logger.info(f"Using PowerPoint template: {template_path}")
+            else:
+                prs = Presentation()
+                logger.warning(f"Template not found, creating new presentation: {template_path}")
+            
+            # Remove existing slides except the first one (title slide)
+            slide_count = len(prs.slides)
+            for i in range(slide_count - 1, 0, -1):  # Remove from last to first (except slide 0)
+                rId = prs.slides._sldIdLst[i].rId
+                prs.part.drop_rel(rId)
+                del prs.slides._sldIdLst[i]
+            
+            # Update title slide if exists
+            if len(prs.slides) > 0:
+                title_slide = prs.slides[0]
+                if title_slide.shapes.title:
+                    title_slide.shapes.title.text = f"Research Report: {topic}"
+                if len(title_slide.placeholders) > 1:
+                    title_slide.placeholders[1].text = f"Generated on {datetime.now().strftime('%B %d, %Y')}"
+            
+            # Add slides from the structured data
+            slides = slides_data.get("slides", [])
+            
+            for slide_info in slides:
+                slide_title = slide_info.get("title", "Untitled Slide")
+                slide_content = slide_info.get("content", [])
+                
+                # Add new slide with content layout
+                slide_layout = prs.slide_layouts[1]  # Typically "Title and Content" layout
+                slide = prs.slides.add_slide(slide_layout)
+                
+                # Set slide title
+                if slide.shapes.title:
+                    slide.shapes.title.text = slide_title
+                
+                # Add content to the slide
+                if len(slide.placeholders) > 1:
+                    content_placeholder = slide.placeholders[1]
+                    
+                    # Handle different content types
+                    if isinstance(slide_content, list):
+                        # Regular bullet points
+                        if content_placeholder.has_text_frame:
+                            text_frame = content_placeholder.text_frame
+                            text_frame.clear()
+                            
+                            for i, bullet_point in enumerate(slide_content):
+                                if isinstance(bullet_point, str):
+                                    p = text_frame.paragraphs[0] if i == 0 else text_frame.add_paragraph()
+                                    p.text = bullet_point
+                                    p.level = 0
+                    
+                    elif isinstance(slide_content, dict):
+                        # Special handling for structured content like SWOT analysis
+                        if content_placeholder.has_text_frame:
+                            text_frame = content_placeholder.text_frame
+                            text_frame.clear()
+                            
+                            paragraph_added = False
+                            for category, items in slide_content.items():
+                                # Add category header
+                                p = text_frame.paragraphs[0] if not paragraph_added else text_frame.add_paragraph()
+                                p.text = f"{category}:"
+                                p.level = 0
+                                paragraph_added = True
+                                
+                                # Add items under category
+                                if isinstance(items, list):
+                                    for item in items:
+                                        p = text_frame.add_paragraph()
+                                        p.text = str(item)
+                                        p.level = 1
+                    
+                    else:
+                        # Single content item
+                        if content_placeholder.has_text_frame:
+                            content_placeholder.text = str(slide_content)
+                
+                logger.info(f"Added slide: {slide_title}")
+            
+            # Generate unique filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_topic = "".join(c for c in topic if c.isalnum() or c in (' ', '-', '_')).rstrip()[:30]
+            filename = f"custom_pptx_{safe_topic}_{timestamp}.pptx"
+            output_path = self.export_dir / filename
+            
+            # Save the presentation
+            prs.save(str(output_path))
+            
+            logger.info(f"Custom PowerPoint created successfully: {output_path}")
+            return str(output_path)
+            
+        except Exception as e:
+            logger.error("Failed to create custom PowerPoint", error=str(e), exc_info=True)
+            raise

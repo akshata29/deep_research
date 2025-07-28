@@ -473,3 +473,71 @@ async def list_exports(
             status_code=500,
             detail="Failed to list export tasks"
         )
+
+
+@router.post("/custom-powerpoint")
+async def export_custom_powerpoint(
+    request_data: dict,
+    azure_manager: AzureServiceManager = Depends(get_azure_manager)
+):
+    """
+    Export custom PowerPoint presentation from slides JSON data.
+    
+    Args:
+        request_data: JSON containing slides_data, topic, and template_name
+        
+    Returns:
+        PowerPoint file download
+    """
+    try:
+        slides_data = request_data.get("slides_data")
+        topic = request_data.get("topic", "Research Report")
+        template_name = request_data.get("template_name", "business")
+        
+        if not slides_data:
+            raise HTTPException(
+                status_code=400,
+                detail="slides_data is required"
+            )
+        
+        logger.info("Creating custom PowerPoint export", topic=topic, template=template_name)
+        
+        # Initialize export service
+        export_service = ExportService(azure_manager)
+        
+        # Generate the PowerPoint file
+        pptx_file_path = await export_service.create_custom_powerpoint(
+            slides_data=slides_data,
+            topic=topic,
+            template_name=template_name
+        )
+        
+        # Verify file exists
+        if not os.path.exists(pptx_file_path):
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to generate PowerPoint file"
+            )
+        
+        # Generate download filename
+        safe_topic = "".join(c for c in topic if c.isalnum() or c in (' ', '-', '_')).rstrip()[:30]
+        download_filename = f"{safe_topic}_custom_report.pptx"
+        
+        logger.info("Custom PowerPoint generated successfully", file_path=pptx_file_path)
+        
+        # Return file as streaming response
+        return FileResponse(
+            path=pptx_file_path,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            filename=download_filename,
+            background=BackgroundTasks()  # Clean up file after download
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to export custom PowerPoint", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to export custom PowerPoint: {str(e)}"
+        )

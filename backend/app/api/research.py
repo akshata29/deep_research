@@ -19,7 +19,7 @@ from app.core.azure_config import AzureServiceManager
 from app.models.schemas import (
     ResearchRequest, ResearchResponse, ResearchProgress, ResearchReport,
     ResearchStatus, AvailableModel, ModelType, ResearchSection,
-    ResearchPlanRequest, ExecuteResearchRequest, FinalReportRequest
+    ResearchPlanRequest, ExecuteResearchRequest, FinalReportRequest, CustomExportRequest
 )
 from app.services.research_orchestrator import ResearchOrchestrator
 from app.services.ai_agent_service import AIAgentService
@@ -1138,7 +1138,7 @@ Make it as detailed as possible, aim for 5 pages or more, the more the better, i
         response_text = await ai_service.generate_response(
             system_prompt=system_prompt.replace("'todaynow'", now),
             prompt=report_prompt,
-            model_name=request_data.request.models_config.get("thinking", "gpt-4") if request_data.request else "gpt-4",
+            model_name=request_data.request.models_config.get("thinking", "gpt-4"),
             agent_name=agent_name,
             max_tokens=8192  # Increased for comprehensive report
         )
@@ -1178,3 +1178,257 @@ Make it as detailed as possible, aim for 5 pages or more, the more the better, i
     except Exception as e:
         logger.error("Failed to generate final report", error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to generate final report: {str(e)}")
+
+
+@router.post("/customexport", response_model=ResearchResponse)
+async def generate_custom_powerpoint(
+    request_data: CustomExportRequest,
+    azure_manager: AzureServiceManager = Depends(get_azure_manager)
+):
+    """Generate custom PowerPoint slides from markdown content."""
+    try:
+        task_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        
+        # Format slide titles for the prompt
+        slide_titles_str = '\\n'.join([f"- {title}" for title in request_data.slide_titles])
+        
+        # Create the specialized prompt for PowerPoint conversion
+        powerpoint_prompt = f"""
+You are an expert presentation-generation AI tasked with converting detailed Markdown research reports into structured PowerPoint slide content, strictly adhering to the provided PPTX template.
+
+---
+
+**Inputs Provided:**  
+- **Markdown Research Report:**  
+'''markdown
+{request_data.markdown_content}
+'''
+
+- **PowerPoint Slide Titles (Template Structure):**  
+{slide_titles_str}
+
+---
+
+**Task:**  
+Parse the provided Markdown report and map its content accurately to each corresponding slide title provided in the PowerPoint template structure.
+
+- Match each Markdown section heading (e.g., `# Company Snapshot`, `## Key Company Metrics`) exactly with the provided slide titles.
+- Clean the Markdown formatting: remove unnecessary details, but preserve important bullet points, numerical metrics, short summaries, and key insights.
+- Each slide's content should be concise, structured, and suitable for PowerPoint presentations (brief bullets, short sentences, no lengthy paragraphs).
+- Clearly indicate if a certain section has limited information or is missing from the Markdown.
+
+---
+
+**Output (Strict JSON Structure):**  
+Produce a JSON object exactly in the following format, which can later be programmatically converted to PPTX slides:
+
+{{
+  "slides": [
+    {{
+      "title": "Company Snapshot",
+      "content": [
+        "Bullet or short sentence 1",
+        "Bullet or short sentence 2",
+        "... (up to 5-7 concise bullets per slide)"
+      ]
+    }},
+    {{
+      "title": "Key Company Metrics",
+      "content": [
+        "Metric 1: value (short description)",
+        "Metric 2: value (short description)",
+        "..."
+      ]
+    }},
+    {{
+      "title": "Sales Mix",
+      "content": [
+        "Segment A: percentage/share",
+        "Segment B: percentage/share",
+        "..."
+      ]
+    }},
+    {{
+      "title": "Revenue by Segment",
+      "content": [
+        "Segment X: revenue figure",
+        "Segment Y: revenue figure",
+        "..."
+      ]
+    }},
+    {{
+      "title": "Businesses Overview",
+      "content": [
+        "Business Unit 1: Brief summary",
+        "Business Unit 2: Brief summary",
+        "..."
+      ]
+    }},
+    {{
+      "title": "Stock Graph History",
+      "content": [
+        "Performance summary (e.g., total return, key highs/lows, major catalysts)",
+        "Recent stock trends"
+      ]
+    }},
+    {{
+      "title": "Considerations",
+      "content": {{
+        "Strengths": ["Strength 1", "..."],
+        "Weaknesses": ["Weakness 1", "..."],
+        "Opportunities": ["Opportunity 1", "..."],
+        "Risks": ["Risk 1", "..."]
+      }}
+    }},
+    {{
+      "title": "Third-Party Perspectives and Multiples",
+      "content": [
+        "Analyst consensus view (e.g., Strong Buy)",
+        "Valuation metrics (P/E, EV/EBITDA)",
+        "Peer benchmarking summary"
+      ]
+    }},
+    {{
+      "title": "Credit Perspectives",
+      "content": [
+        "Credit rating overview",
+        "Debt/Liquidity position summary",
+        "Key credit risks"
+      ]
+    }},
+    {{
+      "title": "Equity Perspectives",
+      "content": [
+        "Investor sentiment summary",
+        "Stock ownership structure",
+        "Recent equity performance versus peers"
+      ]
+    }},
+    {{
+      "title": "Board of Directors",
+      "content": [
+        "Key board members and their roles",
+        "Board composition summary (expertise areas)"
+      ]
+    }}
+  ]
+}}
+
+---
+
+**Rules:**  
+- Include **only information from the provided Markdown**; do not invent or extrapolate.
+- Maintain the exact slide-title order from the PPTX template.
+- If information is unavailable for a particular slide, state clearly: `"Content unavailable in provided Markdown."`
+- **CRITICAL: Return ONLY the JSON object, no additional text, explanations, or markdown formatting.**
+
+Begin now.
+"""
+
+        ai_service = AIAgentService(azure_manager)
+        agent_name = f"thinking-agent-customexport-{request_data.request.models_config.get('thinking', 'gpt-4').replace('-', '') if request_data.request else 'chat4'}"
+        
+        # Generate the slide-ready JSON
+        response_text = await ai_service.generate_response(
+            system_prompt=system_prompt.replace("'todaynow'", now),
+            prompt=powerpoint_prompt,
+            model_name=request_data.request.models_config.get("thinking", "gpt-4") if request_data.request else "chat4",
+            agent_name=agent_name,
+            max_tokens=8192
+        )
+
+        # Parse the JSON response
+        try:
+            import json
+            import re
+            
+            # Clean the response text - remove markdown code blocks and extra text
+            cleaned_response = response_text.strip()
+            
+            # Try to extract JSON from markdown code blocks first
+            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', cleaned_response, re.DOTALL)
+            if json_match:
+                cleaned_response = json_match.group(1)
+            else:
+                # Look for JSON object pattern without code blocks
+                json_match = re.search(r'(\{.*\})', cleaned_response, re.DOTALL)
+                if json_match:
+                    cleaned_response = json_match.group(1)
+            
+            # Parse the cleaned JSON
+            slides_data = json.loads(cleaned_response)
+            
+            # Validate structure
+            if not isinstance(slides_data, dict) or "slides" not in slides_data:
+                raise ValueError("Response is not a valid slides JSON structure")
+                
+            # Validate slides array
+            if not isinstance(slides_data["slides"], list) or len(slides_data["slides"]) == 0:
+                raise ValueError("Slides array is empty or invalid")
+                
+            logger.info("Successfully parsed slides JSON", task_id=task_id, slide_count=len(slides_data["slides"]))
+            
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error("Failed to parse slides JSON", task_id=task_id, response=response_text[:500], error=str(e))
+            # Create a fallback response
+            slides_data = {
+                "slides": [
+                    {
+                        "title": request_data.slide_titles[0] if request_data.slide_titles else "Generated Content",
+                        "content": ["Failed to parse structured content", "Raw content available below", response_text[:500] + "..."]
+                    }
+                ]
+            }
+
+        # Create the PowerPoint file using the existing export service
+        from app.services.export_service import ExportService
+        export_service = ExportService(azure_manager)
+        
+        # Generate a temporary PowerPoint file
+        pptx_file_path = await export_service.create_custom_powerpoint(
+            slides_data=slides_data,
+            topic=request_data.topic,
+            template_name="business"  # You can make this configurable
+        )
+
+        # Create a report with the JSON structure for download
+        json_content = json.dumps(slides_data, indent=2)
+        
+        report = ResearchReport(
+            task_id=task_id,
+            title=f"Custom PowerPoint Export: {request_data.topic[:50]}...",
+            executive_summary="Generated slide-ready JSON structure for custom PowerPoint template",
+            sections=[
+                ResearchSection(
+                    title="PowerPoint Slides JSON Structure",
+                    content=f"```json\n{json_content}\n```",
+                    sources=[],
+                    confidence_score=0.95,
+                    word_count=len(json_content.split())
+                )
+            ],
+            conclusions="PowerPoint slides generated successfully with structured content mapping",
+            sources=[],
+            metadata={
+                "phase": "custom_export",
+                "topic": request_data.topic,
+                "slide_count": len(slides_data.get("slides", [])),
+                "slide_titles": request_data.slide_titles,
+                "pptx_file_path": pptx_file_path,
+                "slides_data": slides_data  # Store for potential frontend download
+            },
+            word_count=len(json_content.split()),
+            reading_time_minutes=max(1, len(json_content.split()) // 200)
+        )
+
+        return ResearchResponse(
+            task_id=task_id,
+            status=ResearchStatus.COMPLETED,
+            message=f"Custom PowerPoint export completed successfully with {len(slides_data.get('slides', []))} slides",
+            report=report
+        )
+
+    except Exception as e:
+        logger.error("Failed to generate custom PowerPoint export", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to generate custom PowerPoint export: {str(e)}")

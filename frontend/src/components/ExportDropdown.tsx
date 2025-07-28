@@ -67,6 +67,13 @@ export const ExportDropdown: React.FC<ExportDropdownProps> = ({
       extension: 'pptx',
     },
     {
+      format: 'custom-pptx' as ExportFormat,
+      label: 'Custom PowerPoint',
+      description: 'AI-generated slides from template',
+      icon: Presentation,
+      extension: 'pptx',
+    },
+    {
       format: 'html' as ExportFormat,
       label: 'HTML',
       description: 'Web page format',
@@ -206,6 +213,109 @@ export const ExportDropdown: React.FC<ExportDropdownProps> = ({
     }
   };
 
+  const downloadCustomPptx = async (content: string, title: string) => {
+    try {
+      // Validate content length
+      if (!content || content.length < 100) {
+        throw new Error('Content too short for meaningful PowerPoint generation');
+      }
+
+      // Default slide titles for custom PowerPoint template
+      const slideTitle = [
+        "Company Snapshot",
+        "Key Company Metrics", 
+        "Sales Mix",
+        "Revenue by Segment",
+        "Businesses Overview",
+        "Stock Graph History",
+        "Considerations",
+        "Third-Party Perspectives and Multiples",
+        "Credit Perspectives",
+        "Equity Perspectives",
+        "Board of Directors"
+      ];
+
+      // Show progress to user
+      toast({
+        title: 'Generating Custom PowerPoint',
+        description: 'AI is analyzing content and creating slides...',
+        status: 'info',
+        duration: 3000,
+      });
+
+      // Call the custom export API to generate slide-ready JSON
+      const customExportResponse = await fetch('/api/v1/research/customexport', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          markdown_content: content,
+          slide_titles: slideTitle,
+          topic: title,
+          request: null // Optional: could include model config
+        }),
+      });
+      
+      if (!customExportResponse.ok) {
+        const errorData = await customExportResponse.text();
+        throw new Error(`Failed to generate custom export structure: ${errorData}`);
+      }
+      
+      const customExportData = await customExportResponse.json();
+      const slidesData = customExportData?.report?.metadata?.slides_data;
+      
+      if (!slidesData || !slidesData.slides || slidesData.slides.length === 0) {
+        throw new Error('No slides data generated from custom export');
+      }
+
+      // Show progress for PowerPoint generation
+      toast({
+        title: 'Creating PowerPoint File',
+        description: `Generating ${slidesData.slides.length} slides...`,
+        status: 'info',
+        duration: 2000,
+      });
+
+      // Now call the PowerPoint generation endpoint
+      const pptxResponse = await fetch('/api/v1/export/custom-powerpoint', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          slides_data: slidesData,
+          topic: title,
+          template_name: "business"
+        }),
+      });
+      
+      if (!pptxResponse.ok) {
+        const errorData = await pptxResponse.text();
+        throw new Error(`Failed to generate custom PowerPoint: ${errorData}`);
+      }
+      
+      const pptxBlob = await pptxResponse.blob();
+      
+      // Verify we got a valid file
+      if (pptxBlob.size === 0) {
+        throw new Error('Generated PowerPoint file is empty');
+      }
+
+      const url = window.URL.createObjectURL(pptxBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${title}_custom.pptx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Custom PowerPoint export error:', error);
+      throw error;
+    }
+  };
+
   const downloadPptx = async (content: string, title: string) => {
     try {
       const response = await fetch('/api/v1/export/markdown-to-pptx', {
@@ -280,6 +390,10 @@ export const ExportDropdown: React.FC<ExportDropdownProps> = ({
           await downloadPptx(reportContent, titleFromContent);
           break;
         
+        case 'custom-pptx':
+          await downloadCustomPptx(reportContent, titleFromContent);
+          break;
+        
         default:
           toast({
             title: 'Unsupported Format',
@@ -289,7 +403,7 @@ export const ExportDropdown: React.FC<ExportDropdownProps> = ({
           });
       }
 
-      if (['markdown', 'html', 'json', 'pdf', 'docx', 'pptx'].includes(format)) {
+      if (['markdown', 'html', 'json', 'pdf', 'docx', 'pptx', 'custom-pptx'].includes(format)) {
         toast({
           title: 'Export Successful',
           description: `Report exported as ${filename}`,

@@ -250,3 +250,11 @@ class FinalReportRequest(BaseModel):
     findings: str = Field(..., description="Research findings")
     requirement: str = Field(default="", description="Additional requirements for the report")
     request: Optional[ResearchRequest] = Field(default=None, description="Base research request configuration")
+
+
+class CustomExportRequest(BaseModel):
+    """Request for custom PowerPoint export."""
+    markdown_content: str = Field(..., description="Markdown content to convert")
+    slide_titles: List[str] = Field(..., description="List of slide titles for the PowerPoint template")
+    topic: str = Field(..., description="Research topic")
+    request: Optional[ResearchRequest] = Field(default=None, description="Base research request configuration")
