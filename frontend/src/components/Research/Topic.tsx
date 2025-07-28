@@ -47,6 +47,30 @@ export const Topic: React.FC = () => {
     resolver: zodResolver(formSchema),
   });
 
+  const defaultTopicValue = `Deep Company Analysis of NVIDIA Corporation (NVDA): Comprehensive Evaluation of Business Overview, Financial Performance, Growth Opportunities, Market Risks, and Strategic Positioning
+
+Final Report Sections (aligned with your PPTX template):
+
+Company Snapshot (Company background, mission, headquarters, geographical presence)
+
+Key Company Metrics (Revenue, profitability, market cap, employee count)
+
+Sales Mix / Revenue by Segment (Detailed breakdown of sales by product line and market segment)
+
+Businesses Overview (Descriptions of major business units and product offerings)
+
+Stock Graph History (Historical stock performance analysis, key events influencing stock price)
+
+Considerations (Detailed SWOT Analysis—Strengths, Weaknesses, Opportunities, Risks)
+
+Third-Party Perspectives and Multiples (External analyst ratings, valuation metrics compared to peers)
+
+Credit Perspectives (Credit ratings, debt analysis, financial health assessment)
+
+Equity Perspectives (Investor sentiment, equity valuation, market performance compared to peers)
+
+Appendix (Board of Directors overview, recent financial statements, additional supporting data)`;
+
   const onSubmit = async (data: FormData) => {
     await askQuestions(data.topic);
   };
@@ -84,7 +108,8 @@ export const Topic: React.FC = () => {
                   <Textarea
                     {...register('topic')}
                     placeholder="Any questions you want to know..."
-                    rows={4}
+                    defaultValue={defaultTopicValue}
+                    rows={8}
                     disabled={isThinking}
                   />
                   <FormErrorMessage>

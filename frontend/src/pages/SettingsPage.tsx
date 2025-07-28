@@ -268,7 +268,7 @@ export const SettingsPage: React.FC = () => {
                                 .map(model => (
                                   <option key={model.name} value={model.name}>
                                     {model.display_name} 
-                                    {model.name.toLowerCase().includes('gpt-4') ? ' (Recommended)' : ''}
+                                    {model.name.toLowerCase().includes('gpt-4.1') ? ' (Recommended)' : ''}
                                     {model.supports_agents ? ' • Agent Ready' : ''}
                                   </option>
                                 ))
