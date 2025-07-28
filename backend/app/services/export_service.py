@@ -13,10 +13,10 @@ import asyncio
 import os
 import tempfile
 import uuid
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-import json
 
 import structlog
 from jinja2 import Environment, FileSystemLoader, Template
@@ -30,6 +30,10 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
+from docx import Document
+from docx.shared import Inches as DocxInches, Pt as DocxPt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.style import WD_STYLE_TYPE
 import aiofiles
 
 from app.core.azure_config import AzureServiceManager
@@ -46,7 +50,10 @@ class ExportService:
     Supports:
     - Markdown export with custom formatting
     - PDF generation with professional styling
+    - Word Document (DOCX) generation
     - PowerPoint presentations with template support
+    - HTML export
+    - JSON export
     - Azure Storage integration for file hosting
     """
     
@@ -211,6 +218,146 @@ class ExportService:
             
         except Exception as e:
             logger.error("PPTX export failed", export_id=export_id, error=str(e), exc_info=True)
+            raise
+    
+    async def export_docx(
+        self,
+        report: ResearchReport,
+        export_id: str,
+        include_sources: bool = True,
+        include_metadata: bool = True,
+        include_table_of_contents: bool = True,
+        include_page_numbers: bool = True
+    ) -> str:
+        """
+        Export research report as Word document.
+        
+        Args:
+            report: Research report to export
+            export_id: Export task identifier
+            include_sources: Whether to include source citations
+            include_metadata: Whether to include report metadata
+            include_table_of_contents: Whether to include table of contents
+            include_page_numbers: Whether to include page numbers
+            
+        Returns:
+            Path to the generated DOCX file
+        """
+        try:
+            logger.info("Exporting report as DOCX", export_id=export_id, task_id=report.task_id)
+            
+            # Generate DOCX using python-docx
+            file_path = self.export_dir / f"report_{export_id}.docx"
+            
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: self._generate_docx_with_python_docx(
+                    report, str(file_path), include_sources, include_metadata,
+                    include_table_of_contents, include_page_numbers
+                )
+            )
+            
+            logger.info("DOCX export completed", export_id=export_id, file_path=str(file_path))
+            
+            return str(file_path)
+            
+        except Exception as e:
+            logger.error("DOCX export failed", export_id=export_id, error=str(e), exc_info=True)
+            raise
+
+    async def export_html(
+        self,
+        report: ResearchReport,
+        export_id: str,
+        include_sources: bool = True,
+        include_metadata: bool = True,
+        custom_css: Optional[str] = None
+    ) -> str:
+        """
+        Export research report as HTML.
+        
+        Args:
+            report: Research report to export
+            export_id: Export task identifier
+            include_sources: Whether to include source citations
+            include_metadata: Whether to include report metadata
+            custom_css: Custom CSS for styling
+            
+        Returns:
+            Path to the generated HTML file
+        """
+        try:
+            logger.info("Exporting report as HTML", export_id=export_id, task_id=report.task_id)
+            
+            # Generate HTML content
+            file_path = self.export_dir / f"report_{export_id}.html"
+            
+            html_content = await self._generate_html_content(
+                report, include_sources, include_metadata, custom_css
+            )
+            
+            async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
+                await f.write(html_content)
+            
+            logger.info("HTML export completed", export_id=export_id, file_path=str(file_path))
+            
+            return str(file_path)
+            
+        except Exception as e:
+            logger.error("HTML export failed", export_id=export_id, error=str(e), exc_info=True)
+            raise
+
+    async def export_json(
+        self,
+        report: ResearchReport,
+        export_id: str,
+        include_raw_data: bool = True
+    ) -> str:
+        """
+        Export research report as JSON.
+        
+        Args:
+            report: Research report to export
+            export_id: Export task identifier
+            include_raw_data: Whether to include raw report data
+            
+        Returns:
+            Path to the generated JSON file
+        """
+        try:
+            logger.info("Exporting report as JSON", export_id=export_id, task_id=report.task_id)
+            
+            # Generate JSON content
+            file_path = self.export_dir / f"report_{export_id}.json"
+            
+            json_content = report.model_dump() if include_raw_data else {
+                "task_id": report.task_id,
+                "title": report.title,
+                "executive_summary": report.executive_summary,
+                "sections": [
+                    {
+                        "title": section.title,
+                        "content": section.content,
+                        "word_count": section.word_count,
+                        "confidence_score": section.confidence_score
+                    }
+                    for section in report.sections
+                ],
+                "conclusions": report.conclusions,
+                "word_count": report.word_count,
+                "reading_time_minutes": report.reading_time_minutes,
+                "created_at": report.created_at.isoformat()
+            }
+            
+            async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
+                await f.write(json.dumps(json_content, indent=2, default=str))
+            
+            logger.info("JSON export completed", export_id=export_id, file_path=str(file_path))
+            
+            return str(file_path)
+            
+        except Exception as e:
+            logger.error("JSON export failed", export_id=export_id, error=str(e), exc_info=True)
             raise
     
     async def _generate_markdown_content(
@@ -592,3 +739,231 @@ class ExportService:
                 logger.debug("Export file cleaned up", file_path=file_path)
         except Exception as e:
             logger.warning("Failed to cleanup export file", file_path=file_path, error=str(e))
+    
+    def _generate_docx_with_python_docx(
+        self,
+        report: ResearchReport,
+        file_path: str,
+        include_sources: bool,
+        include_metadata: bool,
+        include_table_of_contents: bool,
+        include_page_numbers: bool
+    ) -> None:
+        """Generate Word document using python-docx."""
+        try:
+            # Create document
+            doc = Document()
+            
+            # Configure styles
+            styles = doc.styles
+            
+            # Title style
+            title_style = styles.add_style('ReportTitle', WD_STYLE_TYPE.PARAGRAPH)
+            title_font = title_style.font
+            title_font.name = 'Arial'
+            title_font.size = DocxPt(24)
+            title_font.bold = True
+            title_style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            title_style.paragraph_format.space_after = DocxPt(12)
+            
+            # Heading styles
+            heading1_style = styles.add_style('ReportHeading1', WD_STYLE_TYPE.PARAGRAPH)
+            heading1_font = heading1_style.font
+            heading1_font.name = 'Arial'
+            heading1_font.size = DocxPt(18)
+            heading1_font.bold = True
+            heading1_style.paragraph_format.space_before = DocxPt(12)
+            heading1_style.paragraph_format.space_after = DocxPt(6)
+            
+            heading2_style = styles.add_style('ReportHeading2', WD_STYLE_TYPE.PARAGRAPH)
+            heading2_font = heading2_style.font
+            heading2_font.name = 'Arial'
+            heading2_font.size = DocxPt(14)
+            heading2_font.bold = True
+            heading2_style.paragraph_format.space_before = DocxPt(10)
+            heading2_style.paragraph_format.space_after = DocxPt(4)
+            
+            # Body style
+            body_style = styles.add_style('ReportBody', WD_STYLE_TYPE.PARAGRAPH)
+            body_font = body_style.font
+            body_font.name = 'Arial'
+            body_font.size = DocxPt(11)
+            body_style.paragraph_format.space_after = DocxPt(6)
+            body_style.paragraph_format.line_spacing = 1.15
+            
+            # Add title
+            title_para = doc.add_paragraph(report.title, style='ReportTitle')
+            
+            # Add metadata if requested
+            if include_metadata:
+                doc.add_paragraph('Report Information', style='ReportHeading1')
+                
+                metadata_para = doc.add_paragraph(style='ReportBody')
+                metadata_para.add_run(f"Generated: {report.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
+                metadata_para.add_run(f"Task ID: {report.task_id}\n")
+                metadata_para.add_run(f"Word Count: {report.word_count:,}\n")
+                metadata_para.add_run(f"Reading Time: {report.reading_time_minutes} minutes")
+            
+            # Add executive summary
+            doc.add_paragraph('Executive Summary', style='ReportHeading1')
+            doc.add_paragraph(report.executive_summary, style='ReportBody')
+            
+            # Add sections
+            for section in report.sections:
+                doc.add_paragraph(section.title, style='ReportHeading2')
+                
+                # Split content into paragraphs and process
+                content_paragraphs = section.content.split('\n\n')
+                for paragraph_text in content_paragraphs:
+                    if paragraph_text.strip():
+                        # Simple markdown processing
+                        processed_text = paragraph_text.replace('**', '').replace('*', '')
+                        doc.add_paragraph(processed_text, style='ReportBody')
+                
+                # Add sources if requested
+                if include_sources and section.sources:
+                    sources_para = doc.add_paragraph(style='ReportBody')
+                    sources_para.add_run("Sources:\n").bold = True
+                    for i, source in enumerate(section.sources, 1):
+                        sources_para.add_run(f"{i}. {source.title} - {source.url}\n")
+            
+            # Add conclusions
+            if report.conclusions:
+                doc.add_paragraph('Conclusions', style='ReportHeading1')
+                doc.add_paragraph(report.conclusions, style='ReportBody')
+            
+            # Add sources section if requested
+            if include_sources and report.sources:
+                doc.add_paragraph('References', style='ReportHeading1')
+                for i, source in enumerate(report.sources, 1):
+                    source_para = doc.add_paragraph(style='ReportBody')
+                    source_para.add_run(f"{i}. ").bold = True
+                    source_para.add_run(f"{source.title}\n")
+                    source_para.add_run(f"   {source.url}\n")
+                    if source.snippet:
+                        source_para.add_run(f"   {source.snippet[:100]}...")
+            
+            # Save document
+            doc.save(file_path)
+            
+        except Exception as e:
+            logger.error("Failed to generate DOCX with python-docx", error=str(e))
+            raise
+    
+    async def _generate_html_content(
+        self,
+        report: ResearchReport,
+        include_sources: bool,
+        include_metadata: bool,
+        custom_css: Optional[str] = None
+    ) -> str:
+        """Generate HTML content for the report."""
+        try:
+            # Default CSS
+            default_css = """
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; }
+                h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
+                h2 { color: #34495e; border-bottom: 1px solid #bdc3c7; padding-bottom: 5px; }
+                h3 { color: #7f8c8d; }
+                .metadata { background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0; }
+                .section { margin: 30px 0; }
+                .sources { background-color: #f0f0f0; padding: 10px; border-radius: 5px; margin: 10px 0; }
+                .source-item { margin: 5px 0; }
+                .source-url { color: #3498db; text-decoration: none; }
+                .source-url:hover { text-decoration: underline; }
+            </style>
+            """
+            
+            css = custom_css if custom_css else default_css
+            
+            html_lines = [
+                "<!DOCTYPE html>",
+                "<html>",
+                "<head>",
+                "<meta charset='utf-8'>",
+                f"<title>{report.title}</title>",
+                css,
+                "</head>",
+                "<body>",
+                f"<h1>{report.title}</h1>"
+            ]
+            
+            # Add metadata if requested
+            if include_metadata:
+                html_lines.extend([
+                    "<div class='metadata'>",
+                    "<h2>Report Information</h2>",
+                    f"<p><strong>Generated:</strong> {report.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')}</p>",
+                    f"<p><strong>Task ID:</strong> {report.task_id}</p>",
+                    f"<p><strong>Word Count:</strong> {report.word_count:,}</p>",
+                    f"<p><strong>Reading Time:</strong> {report.reading_time_minutes} minutes</p>",
+                    "</div>"
+                ])
+            
+            # Add executive summary
+            html_lines.extend([
+                "<h2>Executive Summary</h2>",
+                f"<p>{report.executive_summary}</p>"
+            ])
+            
+            # Add sections
+            for section in report.sections:
+                html_lines.extend([
+                    "<div class='section'>",
+                    f"<h2>{section.title}</h2>"
+                ])
+                
+                # Convert markdown to HTML
+                content_html = markdown.markdown(section.content)
+                html_lines.append(content_html)
+                
+                # Add sources if requested
+                if include_sources and section.sources:
+                    html_lines.extend([
+                        "<div class='sources'>",
+                        "<h3>Sources:</h3>"
+                    ])
+                    for i, source in enumerate(section.sources, 1):
+                        html_lines.append(
+                            f"<div class='source-item'>{i}. "
+                            f"<a href='{source.url}' class='source-url' target='_blank'>{source.title}</a>"
+                            f"</div>"
+                        )
+                    html_lines.append("</div>")
+                
+                html_lines.append("</div>")
+            
+            # Add conclusions
+            if report.conclusions:
+                html_lines.extend([
+                    "<h2>Conclusions</h2>",
+                    f"<p>{report.conclusions}</p>"
+                ])
+            
+            # Add references section if requested
+            if include_sources and report.sources:
+                html_lines.extend([
+                    "<h2>References</h2>",
+                    "<div class='sources'>"
+                ])
+                for i, source in enumerate(report.sources, 1):
+                    html_lines.extend([
+                        f"<div class='source-item'>",
+                        f"<strong>{i}.</strong> ",
+                        f"<a href='{source.url}' class='source-url' target='_blank'>{source.title}</a>",
+                        f"<br><small>{source.snippet[:100] if source.snippet else ''}...</small>",
+                        f"</div>"
+                    ])
+                html_lines.append("</div>")
+            
+            html_lines.extend([
+                "</body>",
+                "</html>"
+            ])
+            
+            return "\n".join(html_lines)
+            
+        except Exception as e:
+            logger.error("Failed to generate HTML content", error=str(e))
+            raise

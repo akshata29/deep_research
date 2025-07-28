@@ -28,7 +28,10 @@ class ExportFormat(str, Enum):
     """Supported export formats."""
     MARKDOWN = "markdown"
     PDF = "pdf"
+    DOCX = "docx"
     PPTX = "pptx"
+    HTML = "html"
+    JSON = "json"
 
 
 class ModelType(str, Enum):

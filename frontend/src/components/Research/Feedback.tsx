@@ -25,7 +25,7 @@ import ReactMarkdown from 'react-markdown';
 import { parseQuestionsToMarkdown } from '@/utils/jsonContentParser';
 
 const formSchema = z.object({
-  feedback: z.string().min(1, 'Feedback is required'),
+  feedback: z.string().optional(),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -58,7 +58,7 @@ export const Feedback: React.FC = () => {
   });
 
   const onSubmit = async (data: FormData) => {
-    await writeReportPlan(data.feedback);
+    await writeReportPlan(data.feedback || '');
   };
 
   if (!questions) {
@@ -74,7 +74,7 @@ export const Feedback: React.FC = () => {
   return (
     <Card bg={cardBg}>
       <CardHeader>
-        <Heading size="lg">2. Ask Question</Heading>
+        <Heading size="lg">2. Review & Feedback (Optional)</Heading>
       </CardHeader>
       <CardBody>
         <VStack spacing={6} align="stretch">
@@ -110,24 +110,35 @@ export const Feedback: React.FC = () => {
                 </FormErrorMessage>
               </FormControl>
 
-              <Button
-                type="submit"
-                colorScheme="blue"
-                size="lg"
-                width="full"
-                isLoading={isThinking}
-                loadingText={status}
-                disabled={isThinking}
-              >
-                {isThinking ? (
-                  <>
-                    <Icon as={Loader2} className="animate-spin" mr={2} />
-                    {status}
-                  </>
-                ) : (
-                  'Write Report Plan'
-                )}
-              </Button>
+              <HStack spacing={3}>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  flex={1}
+                  onClick={() => writeReportPlan('')}
+                  disabled={isThinking}
+                >
+                  Skip & Continue
+                </Button>
+                <Button
+                  type="submit"
+                  colorScheme="blue"
+                  size="lg"
+                  flex={1}
+                  isLoading={isThinking}
+                  loadingText={status}
+                  disabled={isThinking}
+                >
+                  {isThinking ? (
+                    <>
+                      <Icon as={Loader2} className="animate-spin" mr={2} />
+                      {status}
+                    </>
+                  ) : (
+                    'Continue with Feedback'
+                  )}
+                </Button>
+              </HStack>
             </VStack>
           </form>
         </VStack>

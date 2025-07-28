@@ -1,7 +1,7 @@
 // API Types matching the backend schemas
 
 export type ResearchDepth = 'quick' | 'standard' | 'deep';
-export type ExportFormat = 'markdown' | 'pdf' | 'pptx';
+export type ExportFormat = 'markdown' | 'pdf' | 'docx' | 'pptx' | 'html' | 'json';
 export type TaskStatus = 'pending' | 'thinking' | 'searching' | 'generating' | 'formatting' | 'completed' | 'failed';
 export type ExecutionMode = 'agents' | 'direct' | 'auto';
 
@@ -84,6 +84,16 @@ export interface ExportRequest {
   include_metadata?: boolean;
   template_name?: string;
   custom_branding?: Record<string, any>;
+}
+
+export interface ExportOptions {
+  format: ExportFormat;
+  filename: string;
+  include_sections: string[];
+  includeTableOfContents?: boolean;
+  includePageNumbers?: boolean;
+  includeWatermark?: boolean;
+  compressionLevel?: string;
 }
 
 export interface ExportResponse {

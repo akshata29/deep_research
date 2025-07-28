@@ -60,6 +60,36 @@ if (-not $SkipDeps) {
     Write-Host "Dependencies installed successfully" -ForegroundColor Green
 }
 
+# Check for wkhtmltopdf (required for PDF export)
+Write-Host "Checking wkhtmltopdf..." -ForegroundColor Yellow
+$wkhtmltopdfPaths = @(
+    "C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe",
+    "C:\Program Files (x86)\wkhtmltopdf\bin\wkhtmltopdf.exe"
+)
+
+$wkhtmltopdfFound = $false
+foreach ($path in $wkhtmltopdfPaths) {
+    if (Test-Path $path) {
+        Write-Host "Found wkhtmltopdf at: $path" -ForegroundColor Green
+        $wkhtmltopdfFound = $true
+        break
+    }
+}
+
+if (-not $wkhtmltopdfFound) {
+    # Try to find in PATH
+    try {
+        $null = Get-Command wkhtmltopdf -ErrorAction Stop
+        Write-Host "Found wkhtmltopdf in PATH" -ForegroundColor Green
+        $wkhtmltopdfFound = $true
+    } catch {
+        Write-Host "wkhtmltopdf not found. PDF export will not work." -ForegroundColor Yellow
+        Write-Host "To enable PDF export, download and install wkhtmltopdf from:" -ForegroundColor Yellow
+        Write-Host "https://wkhtmltopdf.org/downloads.html" -ForegroundColor Cyan
+        Write-Host "Choose the Windows installer (64-bit or 32-bit depending on your system)" -ForegroundColor Gray
+    }
+}
+
 # Set up environment file
 if (-not $SkipEnv) {
     if (-not (Test-Path ".env")) {

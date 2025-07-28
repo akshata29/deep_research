@@ -22,6 +22,8 @@ langchain-community==0.0.13
 markdown==3.5.1
 reportlab==4.0.7
 python-pptx==0.6.23
+python-docx==1.1.0
+pdfkit==1.0.0
 jinja2==3.1.2
 pypandoc==1.12
 

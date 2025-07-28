@@ -22,12 +22,13 @@ import {
   ListItem,
   Code
 } from '@chakra-ui/react';
-import { Loader2, Download, FileText } from 'lucide-react';
+import { Loader2, FileText } from 'lucide-react';
 import { useDeepResearchContext } from '@/contexts/DeepResearchContext';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
-import { parseResearchContent, parseFinalReportToMarkdown } from '../../utils/jsonContentParser';
+import { parseFinalReportToMarkdown } from '../../utils/jsonContentParser';
+import { ExportDropdown } from '../ExportDropdown';
 
 const formSchema = z.object({
   requirement: z.string().optional(),
@@ -41,6 +42,7 @@ export const FinalReport: React.FC = () => {
   const { 
     searchTasks,
     finalReport,
+    currentTaskId,
     isWriting,
     status,
     writeFinalReport
@@ -55,23 +57,6 @@ export const FinalReport: React.FC = () => {
 
   const onSubmit = async (data: FormData) => {
     await writeFinalReport(data.requirement);
-  };
-
-  const handleExport = () => {
-    if (!finalReport) return;
-    
-    // Parse and format the content for export
-    const formattedContent = parseFinalReportToMarkdown(finalReport);
-    
-    const blob = new Blob([formattedContent], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'research-report.md';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   const taskFinished = searchTasks.length > 0 && searchTasks.every(task => task.state === 'completed');
@@ -98,16 +83,12 @@ export const FinalReport: React.FC = () => {
             <Box>
               <HStack justify="space-between" mb={4}>
                 <Heading size="sm">Research Report</Heading>
-                <HStack>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    leftIcon={<Icon as={Download} />}
-                    onClick={handleExport}
-                  >
-                    Export
-                  </Button>
-                </HStack>
+                <ExportDropdown 
+                  taskId={currentTaskId || 'temp-task-id'} 
+                  reportContent={parseFinalReportToMarkdown(finalReport)}
+                  reportTitle="research-report"
+                  isDisabled={!finalReport}
+                />
               </HStack>
               <Box
                 p={6}

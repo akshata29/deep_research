@@ -4,7 +4,6 @@ import { apiClient } from '@/services/api';
 import {
   ResearchRequest,
   ResearchResponse,
-  ExportRequest,
   UserSettings,
 } from '@/types';
 
@@ -143,7 +142,16 @@ export const useCreateExport = () => {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (request: ExportRequest) => apiClient.createExport(request),
+    mutationFn: ({ taskId, options }: { taskId: string; options: any }) => 
+      apiClient.createExport({
+        task_id: taskId,
+        format: options.format,
+        include_sources: options.include_sections?.includes('sources') ?? true,
+        include_metadata: options.include_sections?.includes('metadata') ?? true,
+        template_name: options.template_name,
+        custom_branding: options.custom_branding,
+        ...options
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['exports'] });
     },

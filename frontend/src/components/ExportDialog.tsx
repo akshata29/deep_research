@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   ModalOverlay,
@@ -29,21 +29,23 @@ import {
 } from '@chakra-ui/react';
 import { Download, FileText, Globe, Code } from 'lucide-react';
 import { useCreateExport, useExportStatus } from '@/hooks/useApi';
-import { ExportFormat, ExportOptions } from '@/types';
+import { ExportFormat } from '@/types';
 
 interface ExportDialogProps {
   isOpen: boolean;
   onClose: () => void;
   taskId: string;
+  initialFormat?: ExportFormat;
 }
 
 export const ExportDialog: React.FC<ExportDialogProps> = ({
   isOpen,
   onClose,
   taskId,
+  initialFormat = 'pdf',
 }) => {
   const toast = useToast();
-  const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('pdf');
+  const [selectedFormat, setSelectedFormat] = useState<ExportFormat>(initialFormat);
   const [filename, setFilename] = useState('');
   const [includeSections, setIncludeSections] = useState<string[]>([
     'summary',
@@ -60,10 +62,12 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
   const [exportId, setExportId] = useState<string | null>(null);
 
   const createExport = useCreateExport();
-  const { data: exportStatus } = useExportStatus(exportId || '', {
-    enabled: !!exportId,
-    refetchInterval: exportId ? 2000 : false,
-  });
+  const { data: exportStatus } = useExportStatus(exportId || '', !!exportId);
+
+  // Update selected format when initialFormat changes
+  useEffect(() => {
+    setSelectedFormat(initialFormat);
+  }, [initialFormat]);
 
   const handleExport = async () => {
     if (!filename.trim()) {
@@ -76,7 +80,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
       return;
     }
 
-    const exportOptions: ExportOptions = {
+    const exportOptions = {
       format: selectedFormat,
       filename: filename.trim(),
       include_sections: includeSections,
@@ -110,7 +114,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
   const handleClose = () => {
     setExportId(null);
     setFilename('');
-    setSelectedFormat('pdf');
+    setSelectedFormat(initialFormat);
     setIncludeSections(['summary', 'content', 'sources', 'metadata']);
     onClose();
   };
@@ -149,7 +153,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
     }
   };
 
-  const isExporting = exportId && exportStatus?.status === 'processing';
+  const isExporting = exportId && (exportStatus?.status === 'generating' || exportStatus?.status === 'formatting');
   const isCompleted = exportId && exportStatus?.status === 'completed';
   const hasFailed = exportId && exportStatus?.status === 'failed';
 
@@ -175,7 +179,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                 <AlertDescription>
                   {isCompleted && 'Export completed successfully!'}
                   {isExporting && 'Export in progress...'}
-                  {hasFailed && `Export failed: ${exportStatus?.error_message}`}
+                  {hasFailed && `Export failed`}
                 </AlertDescription>
               </Alert>
             )}
@@ -184,7 +188,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
               <Box>
                 <Text fontSize="sm" mb={2}>Export Progress</Text>
                 <Progress 
-                  value={exportStatus?.progress || 0} 
+                  value={50} 
                   colorScheme="brand" 
                   size="lg"
                 />
@@ -197,7 +201,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
               <Select
                 value={selectedFormat}
                 onChange={(e) => setSelectedFormat(e.target.value as ExportFormat)}
-                disabled={isExporting}
+                disabled={!!isExporting}
               >
                 <option value="pdf">PDF</option>
                 <option value="docx">Microsoft Word (DOCX)</option>
@@ -220,7 +224,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                 value={filename}
                 onChange={(e) => setFilename(e.target.value)}
                 placeholder={`research-report.${selectedFormat}`}
-                disabled={isExporting}
+                disabled={!!isExporting}
               />
               <Text fontSize="sm" color="gray.600" mt={1}>
                 Don't include the file extension - it will be added automatically
@@ -237,22 +241,22 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                 onChange={(values) => setIncludeSections(values as string[])}
               >
                 <Stack spacing={2}>
-                  <Checkbox value="summary" isDisabled={isExporting}>
+                  <Checkbox value="summary" isDisabled={!!isExporting}>
                     Executive Summary
                   </Checkbox>
-                  <Checkbox value="content" isDisabled={isExporting}>
+                  <Checkbox value="content" isDisabled={!!isExporting}>
                     Main Content
                   </Checkbox>
-                  <Checkbox value="findings" isDisabled={isExporting}>
+                  <Checkbox value="findings" isDisabled={!!isExporting}>
                     Key Findings
                   </Checkbox>
-                  <Checkbox value="recommendations" isDisabled={isExporting}>
+                  <Checkbox value="recommendations" isDisabled={!!isExporting}>
                     Recommendations
                   </Checkbox>
-                  <Checkbox value="sources" isDisabled={isExporting}>
+                  <Checkbox value="sources" isDisabled={!!isExporting}>
                     Sources & References
                   </Checkbox>
-                  <Checkbox value="metadata" isDisabled={isExporting}>
+                  <Checkbox value="metadata" isDisabled={!!isExporting}>
                     Metadata
                   </Checkbox>
                 </Stack>
@@ -270,7 +274,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                       ...prev,
                       includeTableOfContents: e.target.checked
                     }))}
-                    isDisabled={isExporting}
+                    isDisabled={!!isExporting}
                   >
                     Include Table of Contents
                   </Checkbox>
@@ -280,7 +284,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                       ...prev,
                       includePageNumbers: e.target.checked
                     }))}
-                    isDisabled={isExporting}
+                    isDisabled={!!isExporting}
                   >
                     Include Page Numbers
                   </Checkbox>
@@ -290,7 +294,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                       ...prev,
                       includeWatermark: e.target.checked
                     }))}
-                    isDisabled={isExporting}
+                    isDisabled={!!isExporting}
                   >
                     Include Watermark
                   </Checkbox>
@@ -307,7 +311,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                     ...prev,
                     compressionLevel: e.target.value
                   }))}
-                  disabled={isExporting}
+                  disabled={!!isExporting}
                 >
                   <option value="low">Low (Best Quality)</option>
                   <option value="medium">Medium (Balanced)</option>
@@ -328,7 +332,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                 colorScheme="brand"
                 onClick={handleExport}
                 leftIcon={<Icon as={Download} />}
-                isLoading={createExport.isPending || isExporting}
+                isLoading={createExport.isPending || !!isExporting}
                 isDisabled={!filename.trim() || includeSections.length === 0}
               >
                 {isExporting ? 'Exporting...' : 'Start Export'}

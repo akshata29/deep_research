@@ -9,17 +9,15 @@ import {
   Card,
   CardBody,
   CardHeader,
-  Button,
   Badge,
   Code,
   List,
   ListItem,
-  Icon,
   useColorModeValue,
 } from '@chakra-ui/react';
-import { Download } from 'lucide-react';
 import { ResearchReport } from '@/types';
 import { parseResearchContent } from '@/utils/jsonContentParser';
+import { ExportDropdown } from './ExportDropdown';
 
 interface ReportViewerProps {
   report: ResearchReport;
@@ -83,9 +81,7 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({ report }) => {
         <CardHeader>
           <HStack justify="space-between">
             <Heading size="lg">{report.title}</Heading>
-            <Button size="sm" leftIcon={<Icon as={Download} />}>
-              Export
-            </Button>
+            <ExportDropdown taskId={report.task_id} />
           </HStack>
         </CardHeader>
       </Card>

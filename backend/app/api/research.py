@@ -1108,41 +1108,29 @@ async def generate_final_report(
             aggregated_data = "No detailed findings provided."
         
         report_prompt = f"""
-You are the report‑formatter. Given:
+This is the report plan after user confirmation:
+<PLAN>
+{request_data.plan}
+</PLAN>
 
-- **Topic:** {request_data.topic}  
-- **Research Plan Outline:** {request_data.plan}
-- **Detailed Research Findings:** 
+Here are all the learnings from previous research:
+<LEARNINGS>
 {aggregated_data}
-- **Additional Requirements:** {request_data.requirement}
+</LEARNINGS>
 
-Produce **only** a comprehensive Markdown document that exactly mirrors the slide order and structure required for the presentation:
+Please write according to the user's writing requirements, if any:
+<REQUIREMENT>
+{request_data.requirement}
+</REQUIREMENT>
 
-# Company Snapshot  
-# Key Company Metrics  
-# Sales Mix  
-# Revenue by Segment  
-# Businesses Overview  
-# Stock Graph History  
-# Considerations  
-## Strengths  
-## Weaknesses  
-## Opportunities  
-## Risks  
-# Third‑Party Perspectives and Multiples  
-# Credit Perspectives  
-# Equity Perspectives  
-# Appendix: Board of Directors, Financial Statements and Other  
+The original research topic user requested is:
+<QUERY>
+{request_data.topic}
+</QUERY>
 
-Under each heading, slot in the corresponding content from the research findings above, using tables, lists, and data as needed. This Markdown will be programmatically converted into PPTX. 
-
-CRITICAL INSTRUCTIONS:
-- Use ONLY the headings listed above - do not add any other headings or free‑form sections
-- Include specific data, numbers, and facts from the research findings
-- Format financial data in tables where appropriate
-- Include recent developments and current market information
-- Ensure each section has substantial, actionable content based on the research
-- Do not include any explanatory text about the document structure
+Write a final report based on the report plan using the learnings from research.
+Make it as detailed as possible, aim for 5 pages or more, the more the better, include ALL the learnings from research.
+**Respond only the final report content, and no additional text before or after.**
 """
 
         ai_service = AIAgentService(azure_manager)

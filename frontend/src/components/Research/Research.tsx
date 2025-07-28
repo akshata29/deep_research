@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   VStack, 
   Container, 
@@ -35,6 +35,27 @@ export const Research: React.FC = () => {
     isWriting
   } = useDeepResearchContext();
 
+  // State for managing which accordion panels are expanded
+  const [expandedIndexes, setExpandedIndexes] = useState<number[]>([]);
+
+  // Update expanded indexes when phase changes
+  useEffect(() => {
+    const getActiveIndex = () => {
+      if (phase === 'topic' || phase === 'questions') {
+        return [0]; // Topic & Questions panel
+      } else if (phase === 'feedback') {
+        return [1]; // Feedback panel
+      } else if (phase === 'research') {
+        return [2]; // Research panel
+      } else if (phase === 'report') {
+        return [3]; // Report panel
+      }
+      return [0]; // Default to first panel
+    };
+
+    setExpandedIndexes(getActiveIndex());
+  }, [phase]);
+
   const bgGradient = useColorModeValue(
     'linear(to-br, blue.50, purple.50, pink.50)',
     'linear(to-br, gray.900, blue.900, purple.900)'
@@ -66,26 +87,6 @@ export const Research: React.FC = () => {
     }
   };
 
-  // Determine which accordion items should be expanded by default (only current active phase)
-  const getDefaultExpandedIndexes = () => {
-    const indexes = [];
-    
-    // Only show current active phase expanded by default
-    if (phase === 'topic' || phase === 'questions') {
-      indexes.push(0);
-    } else if (phase === 'feedback') {
-      indexes.push(1);
-    } else if (phase === 'research') {
-      indexes.push(2);
-    } else if (phase === 'report') {
-      indexes.push(3);
-    }
-    
-    return indexes;
-  };
-
-  const defaultExpandedIndexes = getDefaultExpandedIndexes();
-
   // Calculate progress percentage
   const getProgressPercentage = () => {
     const phaseOrder = ['topic', 'questions', 'feedback', 'research', 'report'];
@@ -95,7 +96,7 @@ export const Research: React.FC = () => {
 
   const phaseIcons = [
     { icon: Zap, title: 'Topic & Questions', desc: 'Define research scope' },
-    { icon: Brain, title: 'Review & Feedback', desc: 'Refine approach' },
+    { icon: Brain, title: 'Review & Feedback', desc: 'Refine approach (optional)' },
     { icon: Search, title: 'Research Execution', desc: 'Gather insights' },
     { icon: FileText, title: 'Final Report', desc: 'Generate deliverable' }
   ];
@@ -219,7 +220,8 @@ export const Research: React.FC = () => {
             >
               <Accordion 
                 allowMultiple 
-                defaultIndex={defaultExpandedIndexes}
+                index={expandedIndexes}
+                onChange={(indexes) => setExpandedIndexes(Array.isArray(indexes) ? indexes : [indexes])}
                 variant="unstyled"
               >
                 {/* Phase 1: Topic & Questions */}
@@ -346,10 +348,10 @@ export const Research: React.FC = () => {
                               <HStack justify="space-between" align="center">
                                 <VStack align="start" spacing={1}>
                                   <Text fontWeight="bold" fontSize="lg" color={textColor}>
-                                    Review Questions & Provide Feedback
+                                    Review Questions & Provide Feedback (Optional)
                                   </Text>
                                   <Text fontSize="sm" color={subtitleColor}>
-                                    Review generated questions and provide your insights
+                                    Review generated questions and provide your insights or skip to continue
                                     {feedbackInfo.status === 'completed' && ' • Click to review'}
                                   </Text>
                                 </VStack>

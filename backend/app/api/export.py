@@ -151,12 +151,32 @@ async def process_export(
                 include_sources=export_request.include_sources,
                 include_metadata=export_request.include_metadata
             )
+        elif export_request.format == ExportFormat.DOCX:
+            file_path = await export_service.export_docx(
+                report=placeholder_report,
+                export_id=export_id,
+                include_sources=export_request.include_sources,
+                include_metadata=export_request.include_metadata
+            )
         elif export_request.format == ExportFormat.PPTX:
             file_path = await export_service.export_pptx(
                 report=placeholder_report,
                 export_id=export_id,
                 template_name=export_request.template_name,
                 custom_branding=export_request.custom_branding
+            )
+        elif export_request.format == ExportFormat.HTML:
+            file_path = await export_service.export_html(
+                report=placeholder_report,
+                export_id=export_id,
+                include_sources=export_request.include_sources,
+                include_metadata=export_request.include_metadata
+            )
+        elif export_request.format == ExportFormat.JSON:
+            file_path = await export_service.export_json(
+                report=placeholder_report,
+                export_id=export_id,
+                include_raw_data=True
             )
         else:
             raise ValueError(f"Unsupported export format: {export_request.format}")
