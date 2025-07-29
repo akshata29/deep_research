@@ -152,9 +152,47 @@ class TavilySearchService:
                     sources = []
                     for result in results:
                         if result.get("content") and result.get("url"):
+                            # Use raw_content if available, but limit its size
+                            raw_content = result.get("raw_content", "")
+                            regular_content = result.get("content", "")
+                            
+                            # Choose content source and apply length limits
+                            if raw_content and len(raw_content) <= 80000:  # 80KB limit per source
+                                content = raw_content
+                            elif regular_content and len(regular_content) <= 80000:
+                                content = regular_content
+                            elif raw_content:
+                                # Truncate raw content at sentence boundary
+                                truncated = raw_content[:80000]
+                                last_period = truncated.rfind('.')
+                                if last_period > 72000:  # Keep if we don't lose too much
+                                    content = truncated[:last_period + 1]
+                                else:
+                                    content = truncated + "..."
+                                logger.debug(
+                                    "Raw content truncated for source",
+                                    url=result.get("url", ""),
+                                    original_length=len(raw_content),
+                                    truncated_length=len(content)
+                                )
+                            else:
+                                # Truncate regular content
+                                truncated = regular_content[:80000]
+                                last_period = truncated.rfind('.')
+                                if last_period > 72000:
+                                    content = truncated[:last_period + 1]
+                                else:
+                                    content = truncated + "..."
+                                logger.debug(
+                                    "Regular content truncated for source",
+                                    url=result.get("url", ""),
+                                    original_length=len(regular_content),
+                                    truncated_length=len(content)
+                                )
+                            
                             source = Source(
                                 title=result.get("title", ""),
-                                content=result.get("raw_content") or result.get("content", ""),
+                                content=content,
                                 url=result.get("url", "")
                             )
                             sources.append(source)
@@ -186,27 +224,78 @@ class TavilySearchService:
             logger.error("Tavily search failed", query=query, error=str(e))
             raise Exception(f"Tavily search failed: {str(e)}")
     
-    def format_context_for_llm(self, sources: List[Source]) -> str:
+    def format_context_for_llm(self, sources: List[Source], max_total_chars: int = 240000) -> str:
         """
-        Format search results as context for LLM processing
+        Format search results as context for LLM processing with content length limits
         
         Args:
             sources: List of search result sources
+            max_total_chars: Maximum total characters for all content combined
             
         Returns:
-            Formatted context string with citations
+            Formatted context string with citations, truncated if necessary
         """
         if not sources:
             return "No search results available."
         
         context_parts = []
+        total_chars = 0
+        max_chars_per_source = max_total_chars // max(len(sources), 1)  # Distribute evenly
+        
         for idx, source in enumerate(sources, 1):
+            # Calculate remaining space
+            remaining_chars = max_total_chars - total_chars
+            if remaining_chars <= 0:
+                logger.warning(
+                    "Context truncated - reached maximum character limit",
+                    sources_processed=idx-1,
+                    total_sources=len(sources),
+                    total_chars=total_chars
+                )
+                break
+            
+            # Limit this source's content to available space or per-source limit
+            source_char_limit = min(max_chars_per_source, remaining_chars - 100)  # Reserve space for metadata
+            
+            # Truncate content if necessary
+            content = source.content
+            if len(content) > source_char_limit:
+                # Try to truncate at sentence boundary
+                truncated = content[:source_char_limit]
+                last_period = truncated.rfind('.')
+                last_newline = truncated.rfind('\n')
+                last_boundary = max(last_period, last_newline)
+                
+                if last_boundary > source_char_limit * 0.7:  # Only if we don't lose too much
+                    content = truncated[:last_boundary + 1]
+                else:
+                    content = truncated + "..."
+                
+                logger.debug(
+                    "Content truncated for source",
+                    source_index=idx,
+                    original_length=len(source.content),
+                    truncated_length=len(content)
+                )
+            
             context_part = f"[{idx}] {source.title}\n"
             context_part += f"URL: {source.url}\n"
-            context_part += f"Content: {source.content}\n"
+            context_part += f"Content: {content}\n"
+            
             context_parts.append(context_part)
+            total_chars += len(context_part)
         
-        return "\n\n".join(context_parts)
+        final_context = "\n\n".join(context_parts)
+        
+        logger.info(
+            "Context formatted for LLM",
+            sources_included=len(context_parts),
+            total_sources=len(sources),
+            final_length=len(final_context),
+            max_allowed=max_total_chars
+        )
+        
+        return final_context
     
     async def search_and_format(
         self, 

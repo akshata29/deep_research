@@ -361,6 +361,17 @@ class AIAgentService:
             if not self.ai_client:
                 raise AzureError("AI Project client not initialized")
             
+            # Validate content length
+            MAX_CONTENT_LENGTH = 250000  # Very close to the 256KB limit
+            if len(content) > MAX_CONTENT_LENGTH:
+                logger.error(
+                    "Message content too long",
+                    thread_id=thread.id,
+                    content_length=len(content),
+                    max_allowed=MAX_CONTENT_LENGTH
+                )
+                raise ValueError(f"Message content too long ({len(content)} chars). Maximum allowed: {MAX_CONTENT_LENGTH}")
+
             logger.debug(
                 "Adding message to thread",
                 thread_id=thread.id,
@@ -606,6 +617,17 @@ class AIAgentService:
         """
         try:
             logger.info("Generating response", model=model_name, agent_name=agent_name, prompt_length=len(prompt), use_bing_grounding=use_bing_grounding)
+            
+            # Validate content length before processing
+            MAX_PROMPT_LENGTH = 250000  # Very close to the 256KB limit
+            if len(prompt) > MAX_PROMPT_LENGTH:
+                logger.error(
+                    "Prompt too long for model",
+                    agent_name=agent_name,
+                    prompt_length=len(prompt),
+                    max_allowed=MAX_PROMPT_LENGTH
+                )
+                raise ValueError(f"Prompt too long ({len(prompt)} chars). Maximum allowed: {MAX_PROMPT_LENGTH}")
             
             # Prepare tools for the agent
             tools = []

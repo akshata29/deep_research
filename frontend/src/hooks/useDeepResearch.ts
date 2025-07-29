@@ -109,7 +109,7 @@ export const useDeepResearch = () => {
 
     try {
       const request: ResearchRequest = {
-        prompt: `You are a research planning expert. For the research topic "${topic}", generate 3-5 clarifying questions that would help create a comprehensive research plan. Focus on scope, depth, specific aspects to explore, and methodology. Present the questions in a clear, numbered format.`,
+        prompt: `"${topic}"`,
         models_config: getDefaultModels(),
         execution_mode: settings?.executionMode || 'agents',
         research_depth: 'standard',

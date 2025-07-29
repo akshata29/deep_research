@@ -805,6 +805,7 @@ async def generate_questions(
         **Respond in the same language as the user's language**
         """
 
+        logger.info("Generating clarifying questions", task_id=task_id, prompt=questions_prompt)
 
         # Use thinking model for question generation with unique agent name
         ai_service = AIAgentService(azure_manager)
@@ -887,6 +888,8 @@ Before submitting, review your structure to ensure it has no redundant sections 
 
 **Respond in the same language as the user's language**"
 """
+
+        logger.info("Plan Prompt: ", task_id=task_id, prompt=plan_prompt)
 
         ai_service = AIAgentService(azure_manager)
         agent_name = f"thinking-agent-plan-{request_data.request.models_config.get('thinking', 'gpt-4').replace('-', '')}"
@@ -989,6 +992,8 @@ async def execute_research(
         \`\`\`
         """
 
+        logger.info("Research Prompt: ", task_id=task_id, prompt=research_prompt)
+
         ai_service = AIAgentService(azure_manager)
         agent_name = f"thinking-agent-execute-{request_data.request.models_config.get('thinking', 'gpt-4').replace('-', '')}"
         
@@ -1039,7 +1044,7 @@ async def execute_research(
             if not query.strip():
                 continue
                 
-            logger.info(f"Step 2: Executing query {i+1}/{len(queries_data)}", task_id=task_id, query=query[:100])
+            logger.info(f"Step 2: Executing query {i+1}/{len(queries_data)}", task_id=task_id, query=query)
             
             # Execute individual query with Bing grounding
             query_prompt = f"""
@@ -1189,6 +1194,8 @@ async def execute_research_with_tavily(
         \\`\\`\\`
         """
 
+        logger.info("Research Prompt: ", task_id=task_id, prompt=research_prompt)
+
         ai_service = AIAgentService(azure_manager)
         agent_name = f"thinking-agent-execute-tavily-{request_data.request.models_config.get('thinking', 'gpt-4').replace('-', '')}"
         
@@ -1199,7 +1206,6 @@ async def execute_research_with_tavily(
             prompt=research_prompt,
             model_name=request_data.request.models_config.get("thinking", "gpt-4"),
             agent_name=agent_name,
-            max_tokens=4096,
             use_bing_grounding=False  # No Bing grounding for query generation
         )
 
@@ -1240,7 +1246,7 @@ async def execute_research_with_tavily(
             if not query.strip():
                 continue
                 
-            logger.info(f"Step 2: Executing Tavily search {i+1}/{len(queries_data)}", task_id=task_id, query=query[:100])
+            logger.info(f"Step 2: Executing Tavily search {i+1}/{len(queries_data)}", task_id=task_id, query=query)
             
             try:
                 # Perform Tavily search
@@ -1249,10 +1255,28 @@ async def execute_research_with_tavily(
                     research_goal=research_goal,
                     max_results=5
                 )
-                
+                                
                 context = search_results["context"]
                 sources = search_results["sources"]
                 images = search_results["images"]
+                
+                # Safety check: Ensure context doesn't exceed model limits
+                MAX_CONTEXT_LENGTH = 230000  # Conservative limit for prompt context
+                if len(context) > MAX_CONTEXT_LENGTH:
+                    logger.warning(
+                        "Context too long, truncating",
+                        task_id=task_id,
+                        query_number=i+1,
+                        original_length=len(context),
+                        max_length=MAX_CONTEXT_LENGTH
+                    )
+                    # Truncate at word boundary
+                    truncated = context[:MAX_CONTEXT_LENGTH]
+                    last_space = truncated.rfind(' ')
+                    if last_space > MAX_CONTEXT_LENGTH * 0.9:
+                        context = truncated[:last_space] + "..."
+                    else:
+                        context = truncated + "..."
                 
                 # Create search prompt for LLM with Tavily results
                 search_prompt = f"""Given the following contexts from a SERP search for the query:
@@ -1285,6 +1309,69 @@ Citation Rules:
 **Respond in the same language as the user's language**
 """
                 
+                # Final safety check: Ensure total prompt length is within limits
+                total_prompt_length = len(system_prompt) + len(search_prompt)
+                MAX_TOTAL_PROMPT_LENGTH = 250000  # Very close to the 256KB limit
+                
+                if total_prompt_length > MAX_TOTAL_PROMPT_LENGTH:
+                    logger.warning(
+                        "Total prompt too long, reducing context further",
+                        task_id=task_id,
+                        query_number=i+1,
+                        total_length=total_prompt_length,
+                        max_length=MAX_TOTAL_PROMPT_LENGTH
+                    )
+                    # Calculate how much to reduce the context
+                    excess_length = total_prompt_length - MAX_TOTAL_PROMPT_LENGTH
+                    new_context_length = len(context) - excess_length - 1000  # Extra buffer
+                    
+                    if new_context_length > 1000:  # Ensure we still have meaningful context
+                        truncated_context = context[:new_context_length]
+                        last_space = truncated_context.rfind(' ')
+                        if last_space > new_context_length * 0.9:
+                            context = truncated_context[:last_space] + "..."
+                        else:
+                            context = truncated_context + "..."
+                        
+                        # Rebuild the search prompt with truncated context
+                        search_prompt = f"""Given the following contexts from a SERP search for the query:
+<QUERY>
+{query}
+</QUERY>
+
+You need to organize the searched information according to the following requirements:
+<RESEARCH_GOAL>
+{research_goal}
+</RESEARCH_GOAL>
+
+The following context from the SERP search:
+<CONTEXT>
+{context}
+</CONTEXT>
+
+You need to think like a human researcher.
+Generate a list of learnings from the contexts.
+Make sure each learning is unique and not similar to each other.
+The learnings should be to the point, as detailed and information dense as possible.
+Make sure to include any entities like people, places, companies, products, things, etc in the learnings, as well as any specific entities, metrics, numbers, and dates when available. The learnings will be used to research the topic further.
+
+Citation Rules:
+
+- Please cite the context at the end of sentences when appropriate.
+- Please use the format of citation number [number] to reference the context in corresponding parts of your answer.
+- If a sentence comes from multiple contexts, please list all relevant citation numbers, e.g., [1][2]. Remember not to group citations at the end but list them in the corresponding parts of your answer.
+
+**Respond in the same language as the user's language**
+"""
+                    else:
+                        logger.error(
+                            "Cannot reduce context sufficiently",
+                            task_id=task_id,
+                            query_number=i+1,
+                            required_reduction=excess_length
+                        )
+                        raise Exception("Search context too large even after truncation")
+                
                 # Generate response using task model without grounding
                 query_response = await ai_service.generate_response(
                     system_prompt=system_prompt.replace("'todaynow'", now),
@@ -1314,16 +1401,35 @@ Citation Rules:
                 )
                 
             except Exception as e:
-                logger.error(f"Failed to execute Tavily query {i+1}", task_id=task_id, query=query, error=str(e))
-                # Continue with other queries even if one fails
-                finding_entry = {
-                    "query": query,
-                    "research_goal": research_goal,
-                    "findings": f"Error executing Tavily search: {str(e)}",
-                    "query_number": i + 1,
-                    "sources_count": 0,
-                    "search_method": "tavily"
-                }
+                error_message = str(e)
+                
+                # Check if it's a content length error
+                if "string_above_max_length" in error_message or "string too long" in error_message:
+                    logger.error(
+                        f"Content length exceeded for Tavily query {i+1}",
+                        task_id=task_id,
+                        query=query,
+                        error=error_message
+                    )
+                    finding_entry = {
+                        "query": query,
+                        "research_goal": research_goal,
+                        "findings": "Search results were too large for processing. This query returned extensive content that exceeded model limits.",
+                        "query_number": i + 1,
+                        "sources_count": 0,
+                        "search_method": "tavily"
+                    }
+                else:
+                    logger.error(f"Failed to execute Tavily query {i+1}", task_id=task_id, query=query, error=error_message)
+                    finding_entry = {
+                        "query": query,
+                        "research_goal": research_goal,
+                        "findings": f"Error executing Tavily search: {error_message}",
+                        "query_number": i + 1,
+                        "sources_count": 0,
+                        "search_method": "tavily"
+                    }
+                
                 aggregated_findings.append(finding_entry)
 
         # Format aggregated findings into a comprehensive report (same pattern as /execute)
