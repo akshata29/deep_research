@@ -8,6 +8,7 @@ interface DeepResearchContextType extends DeepResearchState {
   runSearchTasks: () => Promise<void>;
   writeFinalReport: (requirement?: string) => Promise<void>;
   updateState: (updates: Partial<DeepResearchState>) => void;
+  setSessionId: (sessionId: string | null) => void;
 }
 
 const DeepResearchContext = createContext<DeepResearchContextType | undefined>(undefined);

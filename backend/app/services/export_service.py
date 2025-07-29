@@ -76,8 +76,8 @@ class ExportService:
             autoescape=True
         )
         
-        # Export directory for temporary files
-        self.export_dir = Path(tempfile.gettempdir()) / "deep_research_exports"
+        # Export directory for project files
+        self.export_dir = Path("exports")
         self.export_dir.mkdir(exist_ok=True)
         
         # Template configurations

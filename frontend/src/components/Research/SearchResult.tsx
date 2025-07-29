@@ -48,6 +48,13 @@ export const SearchResult: React.FC = () => {
     runSearchTasks
   } = useDeepResearchContext();
 
+  // Debug logs to check what data is actually being passed
+  console.log('SearchResult component render:');
+  console.log('- reportPlan:', reportPlan);
+  console.log('- searchTasks:', searchTasks);
+  console.log('- searchTasks.length:', searchTasks.length);
+  console.log('- isResearching:', isResearching);
+
   const {
     register,
     handleSubmit,
@@ -86,6 +93,7 @@ export const SearchResult: React.FC = () => {
   };
 
   if (!reportPlan) {
+    console.log('SearchResult: NO reportPlan found, showing waiting message');
     return (
       <Card bg={cardBg}>
         <CardBody>
@@ -94,6 +102,11 @@ export const SearchResult: React.FC = () => {
       </Card>
     );
   }
+
+  console.log('SearchResult: reportPlan exists, rendering component');
+  console.log('SearchResult: About to parse reportPlan with parsePlanToMarkdown:', reportPlan);
+  const parsedPlan = parsePlanToMarkdown(reportPlan);
+  console.log('SearchResult: Parsed plan result:', parsedPlan);
 
   return (
     <Card bg={cardBg}>
@@ -112,7 +125,7 @@ export const SearchResult: React.FC = () => {
               borderLeft="4px solid"
               borderColor="green.500"
             >
-              <ReactMarkdown>{parsePlanToMarkdown(reportPlan)}</ReactMarkdown>
+              <ReactMarkdown>{parsedPlan}</ReactMarkdown>
             </Box>
           </Box>
 
@@ -162,7 +175,9 @@ export const SearchResult: React.FC = () => {
                 )}
               </HStack>
               <Accordion allowToggle>
-                {searchTasks.map((task, index) => (
+                {searchTasks.map((task, index) => {
+                  console.log(`SearchResult: Rendering search task ${index}:`, task);
+                  return (
                   <AccordionItem key={index}>
                     <AccordionButton>
                       <HStack flex="1" textAlign="left">
@@ -191,9 +206,12 @@ export const SearchResult: React.FC = () => {
                           <ReactMarkdown>{parseFindingsToMarkdown(task.learning)}</ReactMarkdown>
                         </Box>
                       )}
+                      {!task.learning && (
+                        <Text color="gray.500" fontSize="sm">No research findings available</Text>
+                      )}
                     </AccordionPanel>
                   </AccordionItem>
-                ))}
+                )})}
               </Accordion>
             </Box>
           )}

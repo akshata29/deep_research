@@ -1,4 +1,3 @@
-import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ChakraProvider, ColorModeScript } from '@chakra-ui/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -7,6 +6,7 @@ import { Layout } from './components/Layout';
 import { HomePage } from './pages/HomePage';
 import { ResearchPage } from './pages/ResearchPage';
 import { ExportsPage } from './pages/ExportsPage';
+import { SessionsPage } from './pages/SessionsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -39,6 +39,7 @@ function App() {
                   <Route path="/research" element={<ResearchPage />} />
                   <Route path="/research/:taskId" element={<ResearchPage />} />
                   <Route path="/exports" element={<ExportsPage />} />
+                  <Route path="/sessions" element={<SessionsPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                 </Routes>
               </Layout>

@@ -19,17 +19,91 @@ from app.core.azure_config import AzureServiceManager
 from app.models.schemas import (
     ResearchRequest, ResearchResponse, ResearchProgress, ResearchReport,
     ResearchStatus, AvailableModel, ModelType, ResearchSection,
-    ResearchPlanRequest, ExecuteResearchRequest, FinalReportRequest, CustomExportRequest
+    ResearchPlanRequest, ExecuteResearchRequest, FinalReportRequest, CustomExportRequest,
+    SessionPhase
 )
 from app.services.research_orchestrator import ResearchOrchestrator
 from app.services.ai_agent_service import AIAgentService
 from app.services.web_search_service import WebSearchService
 from app.services.tavily_search_service import TavilySearchService
+from app.services.session_manager import SessionManager
 
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
+# Initialize session manager
+session_manager = SessionManager()
+
+async def save_simple_session_state(
+    session_id: str,
+    phase: str = None,
+    topic: str = None,
+    questions: str = None,
+    feedback: str = None,
+    report_plan: str = None,
+    search_tasks = None,
+    final_report: str = None
+):
+    """
+    Simple helper to save specific session state data.
+    """
+    try:
+        if not session_id:
+            return
+        
+        # Convert string phase to SessionPhase enum
+        phase_enum = None
+        if phase:
+            phase_mapping = {
+                "topic": SessionPhase.TOPIC,
+                "questions": SessionPhase.QUESTIONS,
+                "feedback": SessionPhase.FEEDBACK,
+                "research": SessionPhase.RESEARCH,
+                "report": SessionPhase.REPORT,
+                "complete": SessionPhase.REPORT  # Complete maps to REPORT in the enum
+            }
+            phase_enum = phase_mapping.get(phase, SessionPhase.TOPIC)
+        
+        state_data = {}
+        
+        if phase:
+            state_data["current_phase"] = phase
+        
+        if topic:
+            state_data["topic"] = topic
+            
+        if questions:
+            state_data["questions"] = questions
+            
+        if feedback:
+            state_data["feedback"] = feedback
+            
+        if report_plan:
+            state_data["report_plan"] = report_plan
+            
+        if search_tasks:
+            if hasattr(search_tasks, 'get_search_tasks'):
+                # Handle MockOrchestrator case
+                state_data["search_tasks"] = search_tasks.get_search_tasks()
+            else:
+                state_data["search_tasks"] = search_tasks
+            
+        if final_report:
+            state_data["final_report"] = final_report
+        
+        # Update session with the new state data
+        if phase_enum:
+            success = session_manager.save_session_state(session_id, phase_enum, state_data)
+            if success:
+                logger.info(f"Session state saved successfully", session_id=session_id, phase=phase)
+            else:
+                logger.warning(f"Failed to save session state", session_id=session_id)
+        else:
+            logger.warning(f"Invalid phase provided", session_id=session_id, phase=phase)
+            
+    except Exception as e:
+        logger.error(f"Error saving session state", session_id=session_id, error=str(e))
 
 # Active research tasks and WebSocket connections
 active_tasks: Dict[str, Dict] = {}
@@ -60,6 +134,87 @@ async def get_azure_manager(request: Request) -> AzureServiceManager:
             detail="Azure services not initialized"
         )
     return request.app.state.azure_manager
+
+
+async def save_research_state_to_session(
+    session_id: str,
+    task_id: str,
+    phase: SessionPhase,
+    orchestrator: ResearchOrchestrator,
+    progress: ResearchProgress
+):
+    """
+    Save the current research state to a session.
+    
+    Args:
+        session_id: Session identifier
+        task_id: Research task identifier
+        phase: Current research phase
+        orchestrator: Research orchestrator instance
+        progress: Current research progress
+    """
+    try:
+        if not session_id:
+            return  # No session to save to
+        
+        # Prepare state data based on current phase and orchestrator state
+        state_data = {
+            "phase": phase.value,
+            "currentTaskId": task_id,
+            "progress": {
+                "status": progress.status.value,
+                "progress_percentage": progress.progress_percentage,
+                "current_step": progress.current_step,
+                "tokens_used": progress.tokens_used,
+                "sources_found": progress.sources_found,
+                "estimated_completion": progress.estimated_completion.isoformat() if progress.estimated_completion else None
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        # Add phase-specific data
+        if phase == SessionPhase.TOPIC:
+            state_data["topic"] = getattr(orchestrator, 'prompt', '')
+        elif phase == SessionPhase.QUESTIONS:
+            state_data["questions"] = getattr(orchestrator, 'questions', '')
+        elif phase == SessionPhase.FEEDBACK:
+            state_data["feedback"] = getattr(orchestrator, 'feedback', '')
+        elif phase == SessionPhase.RESEARCH:
+            state_data["search_tasks"] = getattr(orchestrator, 'search_tasks', [])
+        elif phase == SessionPhase.REPORT:
+            report = orchestrator.get_report()
+            if report:
+                state_data["final_report"] = {
+                    "title": report.title,
+                    "summary": report.summary,
+                    "sections": [section.dict() for section in report.sections] if report.sections else [],
+                    "sources": report.sources,
+                    "metadata": report.metadata.dict() if report.metadata else {}
+                }
+        
+        # Save state to session
+        success = session_manager.save_session_state(
+            session_id=session_id,
+            phase=phase,
+            state_data=state_data,
+            task_id=task_id
+        )
+        
+        if success:
+            logger.info("Research state saved to session", 
+                       session_id=session_id, 
+                       task_id=task_id, 
+                       phase=phase.value)
+        else:
+            logger.warning("Failed to save research state to session", 
+                          session_id=session_id, 
+                          task_id=task_id)
+    
+    except Exception as e:
+        logger.error("Error saving research state to session", 
+                    session_id=session_id, 
+                    task_id=task_id, 
+                    error=str(e))
 
 
 @router.get("/models", response_model=List[AvailableModel])
@@ -215,6 +370,7 @@ async def start_research(
         active_tasks[task_id] = {
             "orchestrator": orchestrator,
             "request": request,
+            "session_id": request.session_id,
             "started_at": datetime.utcnow(),
             "status": ResearchStatus.PENDING,
             "progress": 0
@@ -673,6 +829,11 @@ async def execute_research_with_progress_updates(orchestrator: ResearchOrchestra
     try:
         logger.info("Starting research execution with progress monitoring", task_id=task_id)
         
+        # Get session_id from active tasks
+        session_id = None
+        if task_id in active_tasks:
+            session_id = active_tasks[task_id].get("session_id")
+        
         # Start the research execution
         research_task = asyncio.create_task(orchestrator.execute_research())
         
@@ -694,8 +855,22 @@ async def execute_research_with_progress_updates(orchestrator: ResearchOrchestra
             }
             await send_websocket_update(task_id, message_data)
             logger.info("Sent initial progress update", task_id=task_id, status=progress.status.value)
+            
+            # Save initial state to session
+            if session_id:
+                await save_research_state_to_session(
+                    session_id=session_id,
+                    task_id=task_id,
+                    phase=SessionPhase.TOPIC,  # Initial phase
+                    orchestrator=orchestrator,
+                    progress=progress
+                )
+                
         except Exception as e:
             logger.error("Failed to send initial update", task_id=task_id, error=str(e))
+        
+        # Track last saved phase to avoid duplicate saves
+        last_saved_phase = None
         
         # Monitor progress and send updates
         while not research_task.done():
@@ -725,6 +900,29 @@ async def execute_research_with_progress_updates(orchestrator: ResearchOrchestra
                     active_tasks[task_id]["status"] = progress.status
                     active_tasks[task_id]["progress"] = progress.progress_percentage
                 
+                # Save session state based on research status/phase
+                if session_id:
+                    current_phase = None
+                    
+                    # Map research status to session phase
+                    if progress.status == ResearchStatus.THINKING:
+                        current_phase = SessionPhase.QUESTIONS
+                    elif progress.status == ResearchStatus.SEARCHING:
+                        current_phase = SessionPhase.RESEARCH
+                    elif progress.status == ResearchStatus.GENERATING or progress.status == ResearchStatus.FORMATTING:
+                        current_phase = SessionPhase.REPORT
+                    
+                    # Save state if phase changed or at significant progress milestones
+                    if current_phase and current_phase != last_saved_phase:
+                        await save_research_state_to_session(
+                            session_id=session_id,
+                            task_id=task_id,
+                            phase=current_phase,
+                            orchestrator=orchestrator,
+                            progress=progress
+                        )
+                        last_saved_phase = current_phase
+                
                 logger.debug("Progress update sent", task_id=task_id, progress=progress.progress_percentage, step=progress.current_step)
                 
                 # Wait before next update
@@ -753,6 +951,16 @@ async def execute_research_with_progress_updates(orchestrator: ResearchOrchestra
         }
         
         await send_websocket_update(task_id, completion_data)
+        
+        # Save final session state
+        if session_id:
+            await save_research_state_to_session(
+                session_id=session_id,
+                task_id=task_id,
+                phase=SessionPhase.REPORT,  # Final phase
+                orchestrator=orchestrator,
+                progress=final_progress
+            )
         
         logger.info("Research execution completed with progress updates", task_id=task_id, 
                    tokens_used=final_progress.tokens_used, sources_found=final_progress.sources_found)
@@ -789,6 +997,11 @@ async def generate_questions(
     """Generate clarifying questions for the research topic."""
     try:
         task_id = str(uuid.uuid4())
+        
+        logger.info("Generate questions endpoint called", 
+                   task_id=task_id, 
+                   session_id=request.session_id,
+                   prompt=request.prompt[:100])
         
         # Create focused prompt for question generation
         now = datetime.now().isoformat()
@@ -838,6 +1051,21 @@ async def generate_questions(
             word_count=len(response_text.split()),
             reading_time_minutes=max(1, len(response_text.split()) // 200)
         )
+
+        # Save session state if session_id is provided
+        if request.session_id:
+            try:
+                await save_simple_session_state(
+                    request.session_id,
+                    phase="feedback",  # Questions generated -> move to feedback phase
+                    topic=request.prompt,  # Save the original topic
+                    questions=response_text
+                )
+                logger.info("Session state saved after questions generation", 
+                           session_id=request.session_id, task_id=task_id)
+            except Exception as e:
+                logger.error("Failed to save session state", 
+                           session_id=request.session_id, error=str(e))
 
         return ResearchResponse(
             task_id=task_id,
@@ -921,6 +1149,21 @@ Before submitting, review your structure to ensure it has no redundant sections 
             reading_time_minutes=max(1, len(response_text.split()) // 200)
         )
 
+        # Save session state if session_id is provided
+        if request_data.request.session_id:
+            try:
+                await save_simple_session_state(
+                    request_data.request.session_id,
+                    phase="research",  # Plan created -> move to research phase
+                    feedback=request_data.feedback,
+                    report_plan=response_text
+                )
+                logger.info("Session state saved after plan creation", 
+                           session_id=request_data.request.session_id, task_id=task_id)
+            except Exception as e:
+                logger.error("Failed to save session state", 
+                           session_id=request_data.request.session_id, error=str(e))
+
         return ResearchResponse(
             task_id=task_id,
             status=ResearchStatus.COMPLETED,
@@ -964,14 +1207,14 @@ async def execute_research(
                         "type": "string",
                         "description": "The SERP query."
                     },
-                    "researchGoal": {
+                    "research_goal": {
                         "type": "string",
                         "description": "First talk about the goal of the research that this query is meant to accomplish, then go deeper into how to advance the research once the results are found, mention additional research directions. Be as specific as possible, especially for additional research directions. JSON reserved words should be escaped."
                     }
                 }},
                 "required": [
                     "query",
-                    "researchGoal"
+                    "research_goal"
                 ],
                 "additionalProperties": false
             }},
@@ -986,7 +1229,7 @@ async def execute_research(
         [
         {{
             "query": "This is a sample query.",
-            "researchGoal": "This is the reason for the query."
+            "research_goal": "This is the reason for the query."
         }}
         ]
         \`\`\`
@@ -1029,7 +1272,7 @@ async def execute_research(
         except (json.JSONDecodeError, ValueError) as e:
             logger.error("Failed to parse queries JSON", task_id=task_id, response=queries_response[:500], error=str(e))
             # Fallback: treat as single query
-            queries_data = [{"query": request_data.topic, "researchGoal": "General research"}]
+            queries_data = [{"query": request_data.topic, "research_goal": "General research"}]
 
         logger.info("Generated queries", task_id=task_id, query_count=len(queries_data))
 
@@ -1039,7 +1282,7 @@ async def execute_research(
         
         for i, query_item in enumerate(queries_data):
             query = query_item.get("query", "")
-            research_goal = query_item.get("researchGoal", "")
+            research_goal = query_item.get("research_goal", "")
             
             if not query.strip():
                 continue
@@ -1123,12 +1366,44 @@ Please provide comprehensive research findings for this specific query. Include 
             reading_time_minutes=max(1, len(findings_text.split()) // 200)
         )
 
-        return ResearchResponse(
+        return_response = ResearchResponse(
             task_id=task_id,
             status=ResearchStatus.COMPLETED,
             message=f"Research execution completed successfully with {len(aggregated_findings)} queries",
             report=report
         )
+
+        # Save session state if session_id is provided
+        if request_data.request.session_id:
+            try:
+                class MockOrchestrator:
+                    def __init__(self, search_tasks):
+                        self.search_tasks = search_tasks
+                    
+                    def get_search_tasks(self):
+                        return self.search_tasks
+
+                # Convert aggregated_findings to search tasks format
+                search_tasks = []
+                for finding in aggregated_findings:
+                    search_tasks.append({
+                        "query": finding.get("query", ""),
+                        "research_goal": finding.get("research_goal", ""),
+                        "state": "completed",
+                        "learning": finding.get("content", ""),
+                        "sources": finding.get("sources", [])
+                    })
+
+                mock_orchestrator = MockOrchestrator(search_tasks)
+                await save_simple_session_state(
+                    request_data.request.session_id,
+                    phase="report",  # Research execution moves to report phase
+                    search_tasks=mock_orchestrator  # Store search tasks
+                )
+            except Exception as e:
+                logger.warning(f"Failed to save session state: {e}")
+
+        return return_response
 
     except Exception as e:
         logger.error("Failed to execute research", error=str(e))
@@ -1166,14 +1441,14 @@ async def execute_research_with_tavily(
                         "type": "string",
                         "description": "The SERP query."
                     }}}},
-                    "researchGoal": {{{{
+                    "research_goal": {{{{
                         "type": "string",
                         "description": "First talk about the goal of the research that this query is meant to accomplish, then go deeper into how to advance the research once the results are found, mention additional research directions. Be as specific as possible, especially for additional research directions. JSON reserved words should be escaped."
                     }}}}
                 }}}},
                 "required": [
                     "query",
-                    "researchGoal"
+                    "research_goal"
                 ],
                 "additionalProperties": false
             }}}},
@@ -1188,7 +1463,7 @@ async def execute_research_with_tavily(
         [
         {{{{
             "query": "This is a sample query.",
-            "researchGoal": "This is the reason for the query."
+            "research_goal": "This is the reason for the query."
         }}}}
         ]
         \\`\\`\\`
@@ -1230,7 +1505,7 @@ async def execute_research_with_tavily(
         except (json.JSONDecodeError, ValueError) as e:
             logger.error("Failed to parse queries JSON", task_id=task_id, response=queries_response[:500], error=str(e))
             # Fallback: treat as single query
-            queries_data = [{"query": request_data.topic, "researchGoal": "General research"}]
+            queries_data = [{"query": request_data.topic, "research_goal": "General research"}]
 
         logger.info("Generated queries for Tavily search", task_id=task_id, query_count=len(queries_data))
 
@@ -1241,7 +1516,7 @@ async def execute_research_with_tavily(
         
         for i, query_item in enumerate(queries_data):
             query = query_item.get("query", "")
-            research_goal = query_item.get("researchGoal", "")
+            research_goal = query_item.get("research_goal", "")
             
             if not query.strip():
                 continue
@@ -1472,12 +1747,44 @@ Citation Rules:
             reading_time_minutes=max(1, len(findings_text.split()) // 200)
         )
 
-        return ResearchResponse(
+        return_response = ResearchResponse(
             task_id=task_id,
             status=ResearchStatus.COMPLETED,
             message=f"Research execution completed successfully with Tavily search - {len(aggregated_findings)} queries processed",
             report=report
         )
+
+        # Save session state if session_id is provided
+        if request_data.request.session_id:
+            try:
+                class MockOrchestrator:
+                    def __init__(self, search_tasks):
+                        self.search_tasks = search_tasks
+                    
+                    def get_search_tasks(self):
+                        return self.search_tasks
+
+                # Convert aggregated_findings to search tasks format
+                search_tasks = []
+                for finding in aggregated_findings:
+                    search_tasks.append({
+                        "query": finding.get("query", ""),
+                        "research_goal": finding.get("research_goal", ""),
+                        "state": "completed",
+                        "learning": finding.get("findings", ""),
+                        "sources": []  # Tavily sources are embedded in findings
+                    })
+
+                mock_orchestrator = MockOrchestrator(search_tasks)
+                await save_simple_session_state(
+                    request_data.request.session_id,
+                    phase="report",  # Research execution moves to report phase
+                    search_tasks=mock_orchestrator  # Store search tasks
+                )
+            except Exception as e:
+                logger.warning(f"Failed to save session state: {e}")
+
+        return return_response
 
     except Exception as e:
         logger.error("Failed to execute research with Tavily", error=str(e))
@@ -1563,12 +1870,25 @@ async def generate_final_report(
             reading_time_minutes=max(1, len(response_text.split()) // 200)
         )
 
-        return ResearchResponse(
+        return_response = ResearchResponse(
             task_id=task_id,
             status=ResearchStatus.COMPLETED,
             message="Final report generated successfully with comprehensive findings",
             report=report
         )
+
+        # Save session state if session_id is provided
+        if request_data.request.session_id:
+            try:
+                await save_simple_session_state(
+                    request_data.request.session_id,
+                    phase="completed",  # Final report completion marks as complete
+                    final_report=response_text
+                )
+            except Exception as e:
+                logger.warning(f"Failed to save session state: {e}")
+
+        return return_response
 
     except Exception as e:
         logger.error("Failed to generate final report", error=str(e))

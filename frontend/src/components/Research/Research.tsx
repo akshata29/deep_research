@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   VStack, 
   Container, 
@@ -20,6 +20,7 @@ import {
   Flex
 } from '@chakra-ui/react';
 import { CheckCircle, Circle, Clock, Zap, Brain, Search, FileText } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import { useDeepResearchContext } from '@/contexts/DeepResearchContext';
 import { Topic } from './Topic';
 import { Feedback } from './Feedback';
@@ -27,34 +28,248 @@ import { SearchResult } from './SearchResult';
 import { FinalReport } from './FinalReport';
 
 export const Research: React.FC = () => {
+  const location = useLocation();
   const { 
     phase, 
     status, 
     isThinking, 
     isResearching, 
     isWriting,
-    finalReport
+    finalReport,
+    sessionId,
+    topic,
+    questions,
+    feedback,
+    reportPlan,
+    searchTasks,
+    setSessionId,
+    updateState
   } = useDeepResearchContext();
+
+  console.log('Research component render - Current phase:', phase, 'SessionId:', sessionId);
 
   // State for managing which accordion panels are expanded
   const [expandedIndexes, setExpandedIndexes] = useState<number[]>([]);
+  
+  // Track if session has been restored to prevent infinite loops
+  const hasRestoredSession = useRef<string | null>(null);
+
+  // Handle session restoration from navigation state
+  useEffect(() => {
+    console.log('Session restoration useEffect triggered');
+    console.log('Location state:', location.state);
+    console.log('Current sessionId:', sessionId);
+    console.log('hasRestoredSession.current:', hasRestoredSession.current);
+    
+    const { restoredSession, sessionId: navSessionId } = location.state || {};
+    
+    console.log('restoredSession:', restoredSession);
+    console.log('navSessionId:', navSessionId);
+    
+    // If we have session data and the current component phase doesn't match the restored phase,
+    // then we need to restore regardless of whether we've restored before
+    let restoredPhase = restoredSession?.current_phase || restoredSession?.phase;
+    
+    // Override phase detection: if we have a final_report, the session is actually complete
+    if (restoredSession?.final_report && restoredSession.final_report.trim() !== '') {
+      restoredPhase = 'completed';
+    }
+    
+    const shouldRestore = restoredSession && navSessionId && 
+      restoredPhase && 
+      (restoredPhase !== phase || hasRestoredSession.current !== navSessionId);
+    
+    console.log('Should restore check:', {
+      hasRestoredSession: !!restoredSession,
+      hasNavSessionId: !!navSessionId,
+      hasPhase: !!restoredPhase,
+      currentPhase: phase,
+      restoredPhase: restoredPhase,
+      phasesDifferent: restoredPhase !== phase,
+      alreadyRestoredThisSession: hasRestoredSession.current === navSessionId,
+      shouldRestore
+    });
+    
+    // Only restore if:
+    // 1. We have session data from navigation
+    // 2. The restored phase is different from current phase
+    // 3. We have a valid session to restore
+    if (shouldRestore) {
+      console.log('CONDITIONS MET - Starting session restoration');
+      console.log('Restoring session:', navSessionId, restoredSession);
+      hasRestoredSession.current = navSessionId;
+      
+      // Set the session ID
+      setSessionId(navSessionId);
+      
+      // Restore the research state based on the restoration data
+      let actualPhase = restoredPhase;
+      
+      const restorationUpdates: any = {
+        phase: actualPhase || 'topic'
+      };
+      
+      // Phase-specific restoration logic
+      if (actualPhase === 'topic') {
+        // Populate topic and expand Research Topic & Questions
+        if (restoredSession.topic) {
+          restorationUpdates.topic = restoredSession.topic;
+        } else if (restoredSession.description) {
+          restorationUpdates.topic = restoredSession.description;
+        }
+      } else if (actualPhase === 'feedback') {
+        // Populate questions & feedback and move to and expand Review & Feedback
+        if (restoredSession.topic) {
+          restorationUpdates.topic = restoredSession.topic;
+        } else if (restoredSession.description) {
+          restorationUpdates.topic = restoredSession.description;
+        }
+        if (restoredSession.questions) {
+          restorationUpdates.questions = restoredSession.questions;
+        }
+        if (restoredSession.feedback) {
+          restorationUpdates.feedback = restoredSession.feedback;
+        }
+      } else if (actualPhase === 'research') {
+        // Populate report_plan into Research Plan and expand Execute Research Tasks
+        if (restoredSession.topic) {
+          restorationUpdates.topic = restoredSession.topic;
+        } else if (restoredSession.description) {
+          restorationUpdates.topic = restoredSession.description;
+        }
+        if (restoredSession.questions) {
+          restorationUpdates.questions = restoredSession.questions;
+        }
+        if (restoredSession.feedback) {
+          restorationUpdates.feedback = restoredSession.feedback;
+        }
+        if (restoredSession.reportPlan) {
+          restorationUpdates.reportPlan = restoredSession.reportPlan;
+        }
+      } else if (actualPhase === 'report') {
+        // Populate Search Tasks and Expand Final Report
+        if (restoredSession.topic) {
+          restorationUpdates.topic = restoredSession.topic;
+        } else if (restoredSession.description) {
+          restorationUpdates.topic = restoredSession.description;
+        }
+        if (restoredSession.questions) {
+          restorationUpdates.questions = restoredSession.questions;
+        }
+        if (restoredSession.feedback) {
+          restorationUpdates.feedback = restoredSession.feedback;
+        }
+        if (restoredSession.reportPlan) {
+          restorationUpdates.reportPlan = restoredSession.reportPlan;
+        }
+        if (restoredSession.searchTasks) {
+          restorationUpdates.searchTasks = restoredSession.searchTasks;
+        }
+      } else if (actualPhase === 'completed') {
+        // Populate everything and expand all sections
+        if (restoredSession.topic) {
+          restorationUpdates.topic = restoredSession.topic;
+        } else if (restoredSession.description) {
+          restorationUpdates.topic = restoredSession.description;
+        }
+        if (restoredSession.questions) {
+          restorationUpdates.questions = restoredSession.questions;
+        }
+        if (restoredSession.feedback) {
+          restorationUpdates.feedback = restoredSession.feedback;
+        }
+        if (restoredSession.reportPlan) {
+          restorationUpdates.reportPlan = restoredSession.reportPlan;
+        }
+        if (restoredSession.searchTasks) {
+          restorationUpdates.searchTasks = restoredSession.searchTasks;
+        }
+        if (restoredSession.finalReport) {
+          restorationUpdates.finalReport = typeof restoredSession.finalReport === 'string' 
+            ? restoredSession.finalReport 
+            : JSON.stringify(restoredSession.finalReport, null, 2);
+        }
+      }
+      
+      // Always populate currentTaskId if available
+      if (restoredSession.currentTaskId) {
+        restorationUpdates.currentTaskId = restoredSession.currentTaskId;
+      }
+      
+      // Apply the restoration updates
+      console.log('About to apply restoration updates:', restorationUpdates);
+      console.log('Current state before restoration:', { phase, sessionId });
+      updateState(restorationUpdates);
+      console.log('State update called, current state should be updated');
+      
+      // Force accordion expansion after a short delay to ensure state is updated
+      setTimeout(() => {
+        const getActiveIndex = () => {
+          const currentPhase = actualPhase;
+          console.log('Force expanding accordion for phase:', currentPhase);
+          if (currentPhase === 'topic') {
+            return [0]; // Research Topic & Questions panel
+          } else if (currentPhase === 'feedback') {
+            return [1]; // Review & Feedback panel
+          } else if (currentPhase === 'research') {
+            return [2]; // Execute Research Tasks panel
+          } else if (currentPhase === 'report') {
+            return [3]; // Final Report panel
+          } else if (currentPhase === 'completed') {
+            return [0, 1, 2, 3]; // Expand all sections
+          }
+          return [0]; // Default to first panel
+        };
+        
+        const forcedIndexes = getActiveIndex();
+        console.log('Forcing accordion expansion to indexes:', forcedIndexes);
+        setExpandedIndexes(forcedIndexes);
+      }, 100);
+      
+      console.log('Session restored successfully', {
+        sessionId: navSessionId,
+        phase: actualPhase,
+        topic: restorationUpdates.topic,
+        questions: restorationUpdates.questions,
+        reportPlan: restorationUpdates.reportPlan,
+        searchTasks: restorationUpdates.searchTasks,
+        finalReport: restorationUpdates.finalReport ? 'Present' : 'Not present'
+      });
+    } else {
+      console.log('SESSION RESTORATION CONDITIONS NOT MET:');
+      console.log('- Has restoredSession:', !!restoredSession);
+      console.log('- Has navSessionId:', !!navSessionId);
+      console.log('- restoredSession.current_phase:', restoredSession?.current_phase);
+      console.log('- Current phase:', phase);
+      console.log('- shouldRestore:', shouldRestore);
+    }
+  }, [location.state, phase, setSessionId, updateState]);
 
   // Update expanded indexes when phase changes
   useEffect(() => {
     const getActiveIndex = () => {
+      console.log('Getting active index for phase:', phase);
       if (phase === 'topic' || phase === 'questions') {
+        console.log('Returning index 0 for topic/questions phase');
         return [0]; // Topic & Questions panel
       } else if (phase === 'feedback') {
+        console.log('Returning index 1 for feedback phase');
         return [1]; // Feedback panel
       } else if (phase === 'research') {
+        console.log('Returning index 2 for research phase');
         return [2]; // Research panel
-      } else if (phase === 'report') {
+      } else if (phase === 'report' || phase === 'completed') {
+        console.log('Returning index 3 for report/completed phase');
         return [3]; // Report panel
       }
+      console.log('Returning default index 0');
       return [0]; // Default to first panel
     };
 
-    setExpandedIndexes(getActiveIndex());
+    const newIndexes = getActiveIndex();
+    console.log('Phase changed to:', phase, '- Expanding accordion panel:', newIndexes);
+    console.log('Current expandedIndexes before update:', expandedIndexes);
+    setExpandedIndexes(newIndexes);
   }, [phase]);
 
   const bgGradient = useColorModeValue(
@@ -75,28 +290,35 @@ export const Research: React.FC = () => {
 
   // Helper function to get phase status and styling
   const getPhaseInfo = (phaseName: string) => {
-    const phaseOrder = ['topic', 'questions', 'feedback', 'research', 'report'];
+    const phaseOrder = ['topic', 'questions', 'feedback', 'research', 'report', 'completed'];
     const currentIndex = phaseOrder.indexOf(phase);
     const targetIndex = phaseOrder.indexOf(phaseName);
     
+    console.log(`getPhaseInfo for ${phaseName}: currentPhase=${phase}, currentIndex=${currentIndex}, targetIndex=${targetIndex}`);
+    
     if (targetIndex < currentIndex || (phaseName === 'topic' && (phase === 'questions' || currentIndex > 0))) {
+      console.log(`${phaseName}: returning completed/enabled`);
       return { status: 'completed', icon: CheckCircle, color: 'green', isEnabled: true };
     } else if (targetIndex === currentIndex || (phaseName === 'topic' && phase === 'questions')) {
       // Special case for report phase: check if final report is completed
-      if (phaseName === 'report' && phase === 'report' && finalReport && !isWriting) {
+      if (phaseName === 'report' && (phase === 'report' || phase === 'completed') && finalReport && !isWriting) {
+        console.log(`${phaseName}: returning completed/enabled (final report case)`);
         return { status: 'completed', icon: CheckCircle, color: 'green', isEnabled: true };
       }
+      console.log(`${phaseName}: returning active/enabled`);
       return { status: 'active', icon: Clock, color: 'blue', isEnabled: true };
     } else {
+      console.log(`${phaseName}: returning pending/disabled`);
       return { status: 'pending', icon: Circle, color: 'gray', isEnabled: false };
     }
   };
 
   // Calculate progress percentage
   const getProgressPercentage = () => {
-    const phaseOrder = ['topic', 'questions', 'feedback', 'research', 'report'];
+    const phaseOrder = ['topic', 'questions', 'feedback', 'research', 'report', 'completed'];
     const currentIndex = phaseOrder.indexOf(phase);
-    return ((currentIndex + 1) / phaseOrder.length) * 100;
+    if (phase === 'completed') return 100;
+    return ((currentIndex + 1) / (phaseOrder.length - 1)) * 100; // Exclude completed from calculation
   };
 
   const phaseIcons = [
@@ -151,7 +373,9 @@ export const Research: React.FC = () => {
                     const phaseNames = ['topic', 'feedback', 'research', 'report'];
                     const phaseName = phaseNames[index];
                     const phaseInfo = getPhaseInfo(phaseName);
-                    const isCurrentPhase = (phase === phaseName) || (phase === 'questions' && phaseName === 'topic');
+                    const isCurrentPhase = (phase === phaseName) || 
+                                         (phase === 'questions' && phaseName === 'topic') ||
+                                         (phase === 'completed' && phaseName === 'report');
                     
                     return (
                       <Flex

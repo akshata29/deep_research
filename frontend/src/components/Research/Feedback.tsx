@@ -41,11 +41,6 @@ export const Feedback: React.FC = () => {
     writeReportPlan
   } = useDeepResearchContext();
 
-  console.log('=== FEEDBACK COMPONENT RENDER ===');
-  console.log('Questions:', questions);
-  console.log('Phase:', phase);
-  console.log('IsThinking:', isThinking);
-
   const {
     register,
     handleSubmit,

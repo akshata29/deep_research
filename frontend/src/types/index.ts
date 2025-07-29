@@ -20,6 +20,7 @@ export interface ResearchRequest {
   language?: string;
   max_results?: number;
   custom_instructions?: string;
+  session_id?: string;
 }
 
 // Alias for backwards compatibility
@@ -97,13 +98,68 @@ export interface ExportOptions {
   compressionLevel?: string;
 }
 
+export interface ExportMetadata {
+  export_id: string;
+  research_topic: string;
+  task_id: string;
+  export_date: string;
+  format: ExportFormat;
+  file_name: string;
+  file_path: string;
+  file_size_bytes: number;
+  status: 'processing' | 'completed' | 'failed';
+  download_count: number;
+  last_accessed?: string;
+  include_sources: boolean;
+  include_metadata: boolean;
+  template_name?: string;
+  word_count?: number;
+  sections_count?: number;
+}
+
 export interface ExportResponse {
   export_id: string;
-  status: TaskStatus;
+  status: 'processing' | 'completed' | 'failed';
   format: ExportFormat;
   download_url?: string;
   file_size_bytes?: number;
-  expires_at: string;
+  expires_at?: string;
+  metadata?: ExportMetadata;
+}
+
+export interface ExportListItem {
+  export_id: string;
+  task_id: string;
+  research_topic: string;
+  format: ExportFormat;
+  status: 'processing' | 'completed' | 'failed';
+  file_name: string;
+  file_size_bytes: number;
+  export_date: string;
+  download_count: number;
+  last_accessed?: string;
+  download_url?: string;
+  word_count?: number;
+  sections_count?: number;
+  include_sources: boolean;
+  include_metadata: boolean;
+  template_name?: string;
+}
+
+export interface ExportListResponse {
+  exports: ExportListItem[];
+  total_count: number;
+  showing: number;
+  offset: number;
+}
+
+export interface StorageStats {
+  total_files: number;
+  total_size_bytes: number;
+  total_size_mb: number;
+  total_downloads: number;
+  format_breakdown: Record<string, { count: number; size: number }>;
+  average_file_size_mb: number;
 }
 
 // Removed WebSocketMessage interface - now using direct HTTP polling
@@ -132,14 +188,22 @@ export interface ResearchTask {
 }
 
 export interface ExportTask {
-  id: string;
-  taskId: string;
+  export_id: string;
+  task_id: string;
+  research_topic: string;
   format: ExportFormat;
-  status: TaskStatus;
-  downloadUrl?: string;
-  fileSize?: number;
-  createdAt: Date;
-  expiresAt: Date;
+  status: 'processing' | 'completed' | 'failed';
+  file_name: string;
+  file_size_bytes: number;
+  export_date: string;
+  download_count: number;
+  last_accessed?: string;
+  download_url?: string;
+  word_count?: number;
+  sections_count?: number;
+  include_sources: boolean;
+  include_metadata: boolean;
+  template_name?: string;
 }
 
 export interface User {
@@ -275,4 +339,85 @@ export interface FinalReportRequest {
   findings: string;
   requirement?: string;
   request?: ResearchRequest;
+}
+
+// Session History Types
+export type SessionPhase = 'topic' | 'questions' | 'feedback' | 'research' | 'report' | 'completed';
+
+export interface SearchTask {
+  query: string;
+  research_goal: string;
+  state: 'unprocessed' | 'processing' | 'completed' | 'failed';
+  learning: string;
+  sources?: Array<{ url: string; title?: string }>;
+  images?: Array<{ url: string; description?: string }>;
+}
+
+export interface ResearchSession {
+  session_id: string;
+  created_at: string;
+  updated_at: string;
+  title: string;
+  description: string;
+  
+  // Research pipeline state
+  current_phase: SessionPhase;
+  topic: string;
+  questions: string;
+  feedback: string;
+  report_plan: string;
+  search_tasks: SearchTask[];
+  final_report: string;
+  
+  // Task references and metadata
+  task_ids: string[];
+  research_config?: ResearchRequest;
+  
+  // Session statistics
+  total_tokens_used: number;
+  total_sources_found: number;
+  session_duration_minutes: number;
+  completion_percentage: number;
+  
+  // Status and metadata
+  status: string;
+  tags: string[];
+  notes: string;
+}
+
+export interface SessionListResponse {
+  sessions: ResearchSession[];
+  total_count: number;
+  page: number;
+  page_size: number;
+}
+
+export interface SessionCreateRequest {
+  title: string;
+  description?: string;
+  topic?: string;
+  tags?: string[];
+}
+
+export interface SessionUpdateRequest {
+  title?: string;
+  description?: string;
+  tags?: string[];
+  notes?: string;
+  status?: string;
+}
+
+export interface SessionRestoreRequest {
+  session_id: string;
+  continue_from_phase?: SessionPhase;
+}
+
+export interface SessionStorageStats {
+  total_sessions: number;
+  active_sessions: number;
+  completed_sessions: number;
+  archived_sessions: number;
+  total_size_bytes: number;
+  unique_tags: string[];
+  storage_location: string;
 }

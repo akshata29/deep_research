@@ -5,10 +5,18 @@ import {
   ResearchReport,
   ExportRequest,
   ExportResponse,
+  ExportListResponse,
+  StorageStats,
   HealthStatus,
   ModelOption,
   UserSettings,
-  ResearchPlanRequest
+  ResearchPlanRequest,
+  ResearchSession,
+  SessionListResponse,
+  SessionCreateRequest,
+  SessionUpdateRequest,
+  SessionRestoreRequest,
+  SessionStorageStats
 } from '@/types';
 
 export class ApiClientError extends Error {
@@ -172,8 +180,30 @@ class ApiClient {
     return response.data;
   }
 
-  async listExports(): Promise<{ exports: ExportResponse[]; total_count: number }> {
-    const response = await this.client.get<{ exports: ExportResponse[]; total_count: number }>('/export/list');
+  async listExports(params?: {
+    limit?: number;
+    offset?: number;
+    format_filter?: string;
+    status_filter?: string;
+  }): Promise<ExportListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.append('limit', params.limit.toString());
+    if (params?.offset) searchParams.append('offset', params.offset.toString());
+    if (params?.format_filter) searchParams.append('format_filter', params.format_filter);
+    if (params?.status_filter) searchParams.append('status_filter', params.status_filter);
+    
+    const url = `/export/list${searchParams.toString() ? `?${searchParams}` : ''}`;
+    const response = await this.client.get<ExportListResponse>(url);
+    return response.data;
+  }
+
+  async getStorageStats(): Promise<{ success: boolean; data: StorageStats; timestamp: string }> {
+    const response = await this.client.get<{ success: boolean; data: StorageStats; timestamp: string }>('/export/storage-stats');
+    return response.data;
+  }
+
+  async cleanupOldExports(daysOld: number = 30): Promise<{ success: boolean; message: string; cleaned_export_ids: string[]; days_old: number }> {
+    const response = await this.client.post<{ success: boolean; message: string; cleaned_export_ids: string[]; days_old: number }>('/export/cleanup-old', { days_old: daysOld });
     return response.data;
   }
 
@@ -258,6 +288,66 @@ class ApiClient {
     } catch (error) {
       onError(error instanceof Error ? error : new Error('Unknown streaming error'));
     }
+  }
+
+  // Session endpoints
+  async createSession(request: SessionCreateRequest): Promise<ResearchSession> {
+    const response = await this.client.post<ResearchSession>('/sessions/', request);
+    return response.data;
+  }
+
+  async listSessions(params?: {
+    page?: number;
+    page_size?: number;
+    status_filter?: string;
+    tag_filter?: string;
+    search_query?: string;
+  }): Promise<SessionListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.append('page', params.page.toString());
+    if (params?.page_size) searchParams.append('page_size', params.page_size.toString());
+    if (params?.status_filter) searchParams.append('status_filter', params.status_filter);
+    if (params?.tag_filter) searchParams.append('tag_filter', params.tag_filter);
+    if (params?.search_query) searchParams.append('search_query', params.search_query);
+    
+    const url = `/sessions/list${searchParams.toString() ? `?${searchParams}` : ''}`;
+    const response = await this.client.get<SessionListResponse>(url);
+    return response.data;
+  }
+
+  async getSession(sessionId: string): Promise<ResearchSession> {
+    const response = await this.client.get<ResearchSession>(`/sessions/${sessionId}`);
+    return response.data;
+  }
+
+  async updateSession(sessionId: string, request: SessionUpdateRequest): Promise<ResearchSession> {
+    const response = await this.client.put<ResearchSession>(`/sessions/${sessionId}`, request);
+    return response.data;
+  }
+
+  async deleteSession(sessionId: string): Promise<{ success: boolean; message: string; session_id: string }> {
+    const response = await this.client.delete<{ success: boolean; message: string; session_id: string }>(`/sessions/${sessionId}`);
+    return response.data;
+  }
+
+  async saveSessionState(sessionId: string, stateData: any): Promise<{ success: boolean; message: string; session_id: string; phase: string }> {
+    const response = await this.client.post<{ success: boolean; message: string; session_id: string; phase: string }>(`/sessions/${sessionId}/save-state`, stateData);
+    return response.data;
+  }
+
+  async restoreSession(sessionId: string, request: SessionRestoreRequest): Promise<{ success: boolean; message: string; session_id: string; restoration_data: any }> {
+    const response = await this.client.post<{ success: boolean; message: string; session_id: string; restoration_data: any }>(`/sessions/${sessionId}/restore`, request);
+    return response.data;
+  }
+
+  async getSessionStorageStats(): Promise<{ success: boolean; data: SessionStorageStats; timestamp: string }> {
+    const response = await this.client.get<{ success: boolean; data: SessionStorageStats; timestamp: string }>('/sessions/storage/stats');
+    return response.data;
+  }
+
+  async cleanupOldSessions(daysOld: number = 90): Promise<{ success: boolean; archived_sessions: number; days_old: number; message: string }> {
+    const response = await this.client.post<{ success: boolean; archived_sessions: number; days_old: number; message: string }>('/sessions/cleanup', { days_old: daysOld });
+    return response.data;
   }
 }
 

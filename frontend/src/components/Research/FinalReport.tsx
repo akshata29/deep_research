@@ -48,6 +48,14 @@ export const FinalReport: React.FC = () => {
     writeFinalReport
   } = useDeepResearchContext();
 
+  // Debug logs to check what data is actually being passed
+  console.log('FinalReport component render:');
+  console.log('- searchTasks:', searchTasks);
+  console.log('- searchTasks.length:', searchTasks.length);
+  console.log('- finalReport:', finalReport);
+  console.log('- finalReport exists:', !!finalReport);
+  console.log('- isWriting:', isWriting);
+
   const {
     register,
     handleSubmit,
@@ -61,7 +69,10 @@ export const FinalReport: React.FC = () => {
 
   const taskFinished = searchTasks.length > 0 && searchTasks.every(task => task.state === 'completed');
 
+  console.log('FinalReport: taskFinished:', taskFinished);
+
   if (searchTasks.length === 0) {
+    console.log('FinalReport: No search tasks, showing waiting message');
     return (
       <Card bg={cardBg}>
         <CardBody>
@@ -70,6 +81,8 @@ export const FinalReport: React.FC = () => {
       </Card>
     );
   }
+
+  console.log('FinalReport: searchTasks exist, rendering component');
 
   return (
     <Card bg={cardBg}>

@@ -33,28 +33,95 @@ import {
   AlertIcon,
   AlertDescription,
   Spinner,
+  Stat,
+  StatLabel,
+  StatNumber,
+  StatHelpText,
+  Grid,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalFooter,
+  ModalBody,
+  ModalCloseButton,
+  useDisclosure,
+  FormControl,
+  FormLabel,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  NumberIncrementStepper,
+  NumberDecrementStepper,
+  Tooltip,
 } from '@chakra-ui/react';
-import { Search, Download, MoreVertical, Eye, Trash2, RefreshCw } from 'lucide-react';
-import { useExports, useDeleteExport, useDownloadExport } from '@/hooks/useApi';
-import { ExportStatus, ExportFormat } from '@/types';
+import { 
+  Search, 
+  Download, 
+  MoreVertical, 
+  Eye, 
+  Trash2, 
+  RefreshCw, 
+  BarChart3, 
+  Archive, 
+  FileText
+} from 'lucide-react';
+import { 
+  useExports, 
+  useDeleteExport, 
+  useDownloadExport, 
+  useStorageStats, 
+  useCleanupOldExports 
+} from '@/hooks/useApi';
+import { ExportFormat } from '@/types';
 
 interface ExportFilters {
   search: string;
-  status: ExportStatus | '';
+  status: 'processing' | 'completed' | 'failed' | '';
   format: ExportFormat | '';
+  limit: number;
+  offset: number;
 }
 
 export const ExportsPage: React.FC = () => {
   const toast = useToast();
+  const { isOpen: isStatsOpen, onOpen: onStatsOpen, onClose: onStatsClose } = useDisclosure();
+  const { isOpen: isCleanupOpen, onOpen: onCleanupOpen, onClose: onCleanupClose } = useDisclosure();
+  
   const [filters, setFilters] = useState<ExportFilters>({
     search: '',
     status: '',
     format: '',
+    limit: 20,
+    offset: 0,
   });
+  
+  const [cleanupDays, setCleanupDays] = useState<number>(30);
 
-  const { data: exports, isLoading, error, refetch } = useExports(filters);
+  // Build API params from filters
+  const apiParams = {
+    limit: filters.limit,
+    offset: filters.offset,
+    ...(filters.format && { format_filter: filters.format }),
+    ...(filters.status && { status_filter: filters.status }),
+  };
+
+  const { data: exportsData, isLoading, error, refetch } = useExports(apiParams);
+  const { data: storageStats, isLoading: statsLoading } = useStorageStats();
   const deleteExport = useDeleteExport();
   const downloadExport = useDownloadExport();
+  const cleanupOldExports = useCleanupOldExports();
+
+  // Filter exports by search term on client side
+  const filteredExports = exportsData?.exports?.filter(exportItem => {
+    if (!filters.search) return true;
+    const searchLower = filters.search.toLowerCase();
+    return (
+      exportItem.research_topic.toLowerCase().includes(searchLower) ||
+      exportItem.file_name.toLowerCase().includes(searchLower) ||
+      exportItem.export_id.toLowerCase().includes(searchLower)
+    );
+  }) || [];
 
   const handleDownload = async (exportId: string, filename: string) => {
     try {
@@ -94,12 +161,32 @@ export const ExportsPage: React.FC = () => {
     }
   };
 
-  const getStatusColor = (status: ExportStatus) => {
+  const handleCleanup = async () => {
+    try {
+      const result = await cleanupOldExports.mutateAsync(cleanupDays);
+      toast({
+        title: 'Cleanup Completed',
+        description: result.message,
+        status: 'success',
+        duration: 5000,
+      });
+      onCleanupClose();
+    } catch (error) {
+      toast({
+        title: 'Cleanup Failed',
+        description: error instanceof Error ? error.message : 'Failed to cleanup exports',
+        status: 'error',
+        duration: 5000,
+      });
+    }
+  };
+
+  const getStatusColor = (status: 'processing' | 'completed' | 'failed') => {
     switch (status) {
       case 'completed':
         return 'green';
       case 'processing':
-        return 'blue';
+        return 'yellow';
       case 'failed':
         return 'red';
       default:
@@ -107,36 +194,51 @@ export const ExportsPage: React.FC = () => {
     }
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
+  const formatDate = (dateString: string): string => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
-  const filteredExports = exports?.filter(exportItem => {
-    const matchesSearch = !filters.search || 
-      exportItem.filename.toLowerCase().includes(filters.search.toLowerCase()) ||
-      exportItem.task_id.toLowerCase().includes(filters.search.toLowerCase());
-    
-    const matchesStatus = !filters.status || exportItem.status === filters.status;
-    const matchesFormat = !filters.format || exportItem.format === filters.format;
-    
-    return matchesSearch && matchesStatus && matchesFormat;
-  }) || [];
+  const getFormatIcon = (format: ExportFormat) => {
+    const iconProps = { size: 16 };
+    switch (format) {
+      case 'pdf':
+        return <FileText {...iconProps} color="#d32f2f" />;
+      case 'docx':
+        return <FileText {...iconProps} color="#1976d2" />;
+      case 'pptx':
+        return <FileText {...iconProps} color="#f57c00" />;
+      case 'markdown':
+        return <FileText {...iconProps} color="#388e3c" />;
+      case 'html':
+        return <FileText {...iconProps} color="#9c27b0" />;
+      case 'json':
+        return <FileText {...iconProps} color="#607d8b" />;
+      default:
+        return <FileText {...iconProps} />;
+    }
+  };
 
   if (error) {
     return (
-      <Container maxW="6xl" py={8}>
+      <Container maxW="container.xl" py={8}>
         <Alert status="error">
           <AlertIcon />
           <AlertDescription>
-            Failed to load exports. Please try again later.
+            Failed to load exports: {error instanceof Error ? error.message : 'Unknown error'}
           </AlertDescription>
         </Alert>
       </Container>
@@ -144,75 +246,126 @@ export const ExportsPage: React.FC = () => {
   }
 
   return (
-    <Container maxW="6xl" py={8}>
+    <Container maxW="container.xl" py={8}>
       <VStack spacing={6} align="stretch">
         {/* Header */}
-        <HStack justify="space-between">
+        <HStack justify="space-between" align="flex-start">
           <Box>
-            <Heading size="lg" mb={2}>Export Management</Heading>
-            <Text color="gray.600" _dark={{ color: 'gray.400' }}>
-              Manage and download your research exports
+            <Heading size="lg" mb={2}>
+              Export Management
+            </Heading>
+            <Text color="gray.600">
+              View and manage all your research exports
             </Text>
           </Box>
-          <Button
-            leftIcon={<Icon as={RefreshCw} />}
-            onClick={() => refetch()}
-            isLoading={isLoading}
-          >
-            Refresh
-          </Button>
+          <HStack>
+            <Button
+              leftIcon={<Icon as={BarChart3} />}
+              variant="outline"
+              onClick={onStatsOpen}
+              isLoading={statsLoading}
+            >
+              Storage Stats
+            </Button>
+            <Button
+              leftIcon={<Icon as={Archive} />}
+              variant="outline"
+              colorScheme="orange"
+              onClick={onCleanupOpen}
+            >
+              Cleanup Old
+            </Button>
+            <Button
+              leftIcon={<Icon as={RefreshCw} />}
+              variant="outline"
+              onClick={() => refetch()}
+              isLoading={isLoading}
+            >
+              Refresh
+            </Button>
+          </HStack>
         </HStack>
+
+        {/* Storage Stats Cards */}
+        {storageStats?.data && (
+          <Grid templateColumns="repeat(auto-fit, minmax(200px, 1fr))" gap={4}>
+            <Card>
+              <CardBody>
+                <Stat>
+                  <StatLabel>Total Exports</StatLabel>
+                  <StatNumber>{storageStats.data.total_files}</StatNumber>
+                  <StatHelpText>All time</StatHelpText>
+                </Stat>
+              </CardBody>
+            </Card>
+            <Card>
+              <CardBody>
+                <Stat>
+                  <StatLabel>Storage Used</StatLabel>
+                  <StatNumber>{storageStats.data.total_size_mb} MB</StatNumber>
+                  <StatHelpText>
+                    Avg: {storageStats.data.average_file_size_mb} MB per file
+                  </StatHelpText>
+                </Stat>
+              </CardBody>
+            </Card>
+            <Card>
+              <CardBody>
+                <Stat>
+                  <StatLabel>Total Downloads</StatLabel>
+                  <StatNumber>{storageStats.data.total_downloads}</StatNumber>
+                  <StatHelpText>All exports</StatHelpText>
+                </Stat>
+              </CardBody>
+            </Card>
+          </Grid>
+        )}
 
         {/* Filters */}
         <Card>
           <CardBody>
-            <HStack spacing={4} wrap="wrap">
-              <InputGroup maxW="300px">
-                <InputLeftElement pointerEvents="none">
-                  <Icon as={Search} color="gray.400" />
-                </InputLeftElement>
-                <Input
-                  placeholder="Search exports..."
-                  value={filters.search}
-                  onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-                />
-              </InputGroup>
-
-              <Select
-                placeholder="All statuses"
-                maxW="200px"
-                value={filters.status}
-                onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value as ExportStatus | '' }))}
-              >
-                <option value="pending">Pending</option>
-                <option value="processing">Processing</option>
-                <option value="completed">Completed</option>
-                <option value="failed">Failed</option>
-              </Select>
-
-              <Select
-                placeholder="All formats"
-                maxW="200px"
-                value={filters.format}
-                onChange={(e) => setFilters(prev => ({ ...prev, format: e.target.value as ExportFormat | '' }))}
-              >
-                <option value="pdf">PDF</option>
-                <option value="docx">DOCX</option>
-                <option value="html">HTML</option>
-                <option value="markdown">Markdown</option>
-                <option value="json">JSON</option>
-              </Select>
-
-              {(filters.search || filters.status || filters.format) && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setFilters({ search: '', status: '', format: '' })}
+            <Grid templateColumns="repeat(auto-fit, minmax(200px, 1fr))" gap={4}>
+              <FormControl>
+                <FormLabel>Search</FormLabel>
+                <InputGroup>
+                  <InputLeftElement>
+                    <Icon as={Search} color="gray.400" />
+                  </InputLeftElement>
+                  <Input
+                    placeholder="Search exports..."
+                    value={filters.search}
+                    onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                  />
+                </InputGroup>
+              </FormControl>
+              <FormControl>
+                <FormLabel>Status</FormLabel>
+                <Select
+                  value={filters.status}
+                  onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value as any, offset: 0 }))}
                 >
-                  Clear Filters
-                </Button>
-              )}
-            </HStack>
+                  <option value="">All Statuses</option>
+                  <option value="completed">Completed</option>
+                  <option value="processing">Processing</option>
+                  <option value="failed">Failed</option>
+                </Select>
+              </FormControl>
+              <FormControl>
+                <FormLabel>Format</FormLabel>
+                <Select
+                  value={filters.format}
+                  onChange={(e) => setFilters(prev => ({ ...prev, format: e.target.value as any, offset: 0 }))}
+                >
+                  <option value="">All Formats</option>
+                  <option value="pdf">PDF</option>
+                  <option value="docx">Word Document</option>
+                  <option value="pptx">PowerPoint</option>
+                  <option value="markdown">Markdown</option>
+                  <option value="html">HTML</option>
+                  <option value="json">JSON</option>
+                </Select>
+              </FormControl>
+            </Grid>
           </CardBody>
         </Card>
 
@@ -220,41 +373,33 @@ export const ExportsPage: React.FC = () => {
         <Card>
           <CardHeader>
             <HStack justify="space-between">
-              <Heading size="md">Exports ({filteredExports.length})</Heading>
+              <Text fontWeight="medium">
+                Exports ({filteredExports.length} of {exportsData?.total_count || 0})
+              </Text>
               {isLoading && <Spinner size="sm" />}
             </HStack>
           </CardHeader>
-          <CardBody>
-            {isLoading ? (
-              <VStack py={8}>
-                <Spinner size="lg" />
-                <Text>Loading exports...</Text>
-              </VStack>
-            ) : filteredExports.length === 0 ? (
-              <VStack spacing={4} py={12} textAlign="center">
-                <Icon as={Download} boxSize={12} color="gray.400" />
-                <VStack spacing={2}>
-                  <Heading size="md" color="gray.600">
-                    No exports found
-                  </Heading>
-                  <Text color="gray.500" maxW="md">
-                    {filters.search || filters.status || filters.format
-                      ? "No exports match your current filters."
-                      : "You haven't created any exports yet. Start a research task to generate reports."}
-                  </Text>
-                </VStack>
-              </VStack>
+          <CardBody p={0}>
+            {filteredExports.length === 0 ? (
+              <Box p={8} textAlign="center">
+                <Text color="gray.500">
+                  {filters.search || filters.status || filters.format
+                    ? 'No exports match your filters'
+                    : 'No exports found. Start by creating a research report and exporting it.'}
+                </Text>
+              </Box>
             ) : (
               <TableContainer>
                 <Table variant="simple">
                   <Thead>
                     <Tr>
-                      <Th>Filename</Th>
-                      <Th>Task ID</Th>
+                      <Th>Research Topic</Th>
                       <Th>Format</Th>
                       <Th>Status</Th>
-                      <Th>Size</Th>
+                      <Th>File Size</Th>
                       <Th>Created</Th>
+                      <Th>Downloads</Th>
+                      <Th>Last Accessed</Th>
                       <Th>Actions</Th>
                     </Tr>
                   </Thead>
@@ -263,23 +408,27 @@ export const ExportsPage: React.FC = () => {
                       <Tr key={exportItem.export_id}>
                         <Td>
                           <VStack align="start" spacing={1}>
-                            <Text fontWeight="medium">{exportItem.filename}</Text>
-                            {exportItem.error_message && (
-                              <Text fontSize="sm" color="red.500">
-                                {exportItem.error_message}
+                            <Text fontWeight="medium" fontSize="sm">
+                              {exportItem.research_topic}
+                            </Text>
+                            <Text fontSize="xs" color="gray.500">
+                              {exportItem.file_name}
+                            </Text>
+                            {exportItem.word_count && (
+                              <Text fontSize="xs" color="gray.500">
+                                {exportItem.word_count.toLocaleString()} words
+                                {exportItem.sections_count && ` • ${exportItem.sections_count} sections`}
                               </Text>
                             )}
                           </VStack>
                         </Td>
                         <Td>
-                          <Text fontSize="sm" fontFamily="mono">
-                            {exportItem.task_id}
-                          </Text>
-                        </Td>
-                        <Td>
-                          <Badge variant="subtle" colorScheme="blue">
-                            {exportItem.format.toUpperCase()}
-                          </Badge>
+                          <HStack>
+                            {getFormatIcon(exportItem.format)}
+                            <Text fontSize="sm" textTransform="uppercase">
+                              {exportItem.format}
+                            </Text>
+                          </HStack>
                         </Td>
                         <Td>
                           <Badge colorScheme={getStatusColor(exportItem.status)}>
@@ -287,34 +436,39 @@ export const ExportsPage: React.FC = () => {
                           </Badge>
                         </Td>
                         <Td>
-                          {exportItem.file_size ? formatFileSize(exportItem.file_size) : 'N/A'}
-                        </Td>
-                        <Td>
                           <Text fontSize="sm">
-                            {formatDate(exportItem.created_at)}
+                            {formatFileSize(exportItem.file_size_bytes)}
                           </Text>
                         </Td>
                         <Td>
-                          <HStack spacing={2}>
-                            {exportItem.status === 'completed' && (
-                              <>
+                          <Text fontSize="sm">
+                            {formatDate(exportItem.export_date)}
+                          </Text>
+                        </Td>
+                        <Td>
+                          <Text fontSize="sm">
+                            {exportItem.download_count}
+                          </Text>
+                        </Td>
+                        <Td>
+                          <Text fontSize="sm" color="gray.500">
+                            {exportItem.last_accessed
+                              ? formatDate(exportItem.last_accessed)
+                              : 'Never'}
+                          </Text>
+                        </Td>
+                        <Td>
+                          <HStack>
+                            {exportItem.status === 'completed' && exportItem.download_url && (
+                              <Tooltip label="Download">
                                 <IconButton
-                                  aria-label="View export"
-                                  icon={<Icon as={Eye} />}
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => handleDownload(exportItem.export_id, exportItem.filename)}
-                                />
-                                <IconButton
-                                  aria-label="Download export"
+                                  aria-label="Download"
                                   icon={<Icon as={Download} />}
                                   size="sm"
-                                  colorScheme="blue"
                                   variant="ghost"
-                                  onClick={() => handleDownload(exportItem.export_id, exportItem.filename)}
-                                  isLoading={downloadExport.isPending}
+                                  onClick={() => handleDownload(exportItem.export_id, exportItem.file_name)}
                                 />
-                              </>
+                              </Tooltip>
                             )}
                             <Menu>
                               <MenuButton
@@ -326,12 +480,30 @@ export const ExportsPage: React.FC = () => {
                               />
                               <MenuList>
                                 <MenuItem
-                                  icon={<Icon as={Trash2} />}
-                                  color="red.500"
-                                  onClick={() => handleDelete(exportItem.export_id, exportItem.filename)}
-                                  isDisabled={deleteExport.isPending}
+                                  icon={<Icon as={Eye} />}
+                                  onClick={() => {
+                                    // Could add preview functionality here
+                                    toast({
+                                      title: 'Export Details',
+                                      description: `
+                                        Topic: ${exportItem.research_topic}
+                                        Format: ${exportItem.format.toUpperCase()}
+                                        Size: ${formatFileSize(exportItem.file_size_bytes)}
+                                        Downloads: ${exportItem.download_count}
+                                      `,
+                                      status: 'info',
+                                      duration: 5000,
+                                    });
+                                  }}
                                 >
-                                  Delete Export
+                                  View Details
+                                </MenuItem>
+                                <MenuItem
+                                  icon={<Icon as={Trash2} />}
+                                  onClick={() => handleDelete(exportItem.export_id, exportItem.file_name)}
+                                  color="red.500"
+                                >
+                                  Delete
                                 </MenuItem>
                               </MenuList>
                             </Menu>
@@ -346,42 +518,138 @@ export const ExportsPage: React.FC = () => {
           </CardBody>
         </Card>
 
-        {/* Summary Stats */}
-        {filteredExports.length > 0 && (
-          <Card>
-            <CardBody>
-              <HStack spacing={8} justify="center">
-                <VStack>
-                  <Text fontSize="2xl" fontWeight="bold" color="green.500">
-                    {filteredExports.filter(e => e.status === 'completed').length}
-                  </Text>
-                  <Text fontSize="sm" color="gray.600">Completed</Text>
-                </VStack>
-                <VStack>
-                  <Text fontSize="2xl" fontWeight="bold" color="blue.500">
-                    {filteredExports.filter(e => e.status === 'processing').length}
-                  </Text>
-                  <Text fontSize="sm" color="gray.600">Processing</Text>
-                </VStack>
-                <VStack>
-                  <Text fontSize="2xl" fontWeight="bold" color="red.500">
-                    {filteredExports.filter(e => e.status === 'failed').length}
-                  </Text>
-                  <Text fontSize="sm" color="gray.600">Failed</Text>
-                </VStack>
-                <VStack>
-                  <Text fontSize="2xl" fontWeight="bold" color="gray.500">
-                    {filteredExports.reduce((sum, e) => sum + (e.file_size || 0), 0) > 0 
-                      ? formatFileSize(filteredExports.reduce((sum, e) => sum + (e.file_size || 0), 0))
-                      : 'N/A'
-                    }
-                  </Text>
-                  <Text fontSize="sm" color="gray.600">Total Size</Text>
-                </VStack>
-              </HStack>
-            </CardBody>
-          </Card>
+        {/* Pagination */}
+        {exportsData && exportsData.total_count > filters.limit && (
+          <HStack justify="space-between">
+            <Text fontSize="sm" color="gray.600">
+              Showing {filters.offset + 1}-{Math.min(filters.offset + filters.limit, exportsData.total_count)} of{' '}
+              {exportsData.total_count}
+            </Text>
+            <HStack>
+              <Button
+                size="sm"
+                variant="outline"
+                isDisabled={filters.offset === 0}
+                onClick={() => setFilters(prev => ({ ...prev, offset: Math.max(0, prev.offset - prev.limit) }))}
+              >
+                Previous
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                isDisabled={filters.offset + filters.limit >= exportsData.total_count}
+                onClick={() => setFilters(prev => ({ ...prev, offset: prev.offset + prev.limit }))}
+              >
+                Next
+              </Button>
+            </HStack>
+          </HStack>
         )}
+
+        {/* Storage Stats Modal */}
+        <Modal isOpen={isStatsOpen} onClose={onStatsClose} size="lg">
+          <ModalOverlay />
+          <ModalContent>
+            <ModalHeader>Storage Statistics</ModalHeader>
+            <ModalCloseButton />
+            <ModalBody>
+              {storageStats?.data && (
+                <VStack spacing={4} align="stretch">
+                  <Grid templateColumns="repeat(2, 1fr)" gap={4}>
+                    <Stat>
+                      <StatLabel>Total Files</StatLabel>
+                      <StatNumber>{storageStats.data.total_files}</StatNumber>
+                    </Stat>
+                    <Stat>
+                      <StatLabel>Total Size</StatLabel>
+                      <StatNumber>{storageStats.data.total_size_mb} MB</StatNumber>
+                    </Stat>
+                    <Stat>
+                      <StatLabel>Total Downloads</StatLabel>
+                      <StatNumber>{storageStats.data.total_downloads}</StatNumber>
+                    </Stat>
+                    <Stat>
+                      <StatLabel>Avg File Size</StatLabel>
+                      <StatNumber>{storageStats.data.average_file_size_mb} MB</StatNumber>
+                    </Stat>
+                  </Grid>
+                  
+                  <Box>
+                    <Text fontWeight="medium" mb={3}>Format Breakdown</Text>
+                    <VStack spacing={2} align="stretch">
+                      {Object.entries(storageStats.data.format_breakdown).map(([format, stats]) => (
+                        <HStack key={format} justify="space-between">
+                          <HStack>
+                            {getFormatIcon(format as ExportFormat)}
+                            <Text textTransform="uppercase">{format}</Text>
+                          </HStack>
+                          <HStack>
+                            <Text>{stats.count} files</Text>
+                            <Text color="gray.500">
+                              ({formatFileSize(stats.size)})
+                            </Text>
+                          </HStack>
+                        </HStack>
+                      ))}
+                    </VStack>
+                  </Box>
+                </VStack>
+              )}
+            </ModalBody>
+            <ModalFooter>
+              <Button onClick={onStatsClose}>Close</Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+
+        {/* Cleanup Modal */}
+        <Modal isOpen={isCleanupOpen} onClose={onCleanupClose}>
+          <ModalOverlay />
+          <ModalContent>
+            <ModalHeader>Cleanup Old Exports</ModalHeader>
+            <ModalCloseButton />
+            <ModalBody>
+              <VStack spacing={4} align="stretch">
+                <Text>
+                  This will permanently delete all exports older than the specified number of days.
+                </Text>
+                <FormControl>
+                  <FormLabel>Delete exports older than (days)</FormLabel>
+                  <NumberInput
+                    value={cleanupDays}
+                    onChange={(_, value) => setCleanupDays(value || 30)}
+                    min={1}
+                    max={365}
+                  >
+                    <NumberInputField />
+                    <NumberInputStepper>
+                      <NumberIncrementStepper />
+                      <NumberDecrementStepper />
+                    </NumberInputStepper>
+                  </NumberInput>
+                </FormControl>
+                <Alert status="warning">
+                  <AlertIcon />
+                  <AlertDescription>
+                    This action cannot be undone. Deleted exports cannot be recovered.
+                  </AlertDescription>
+                </Alert>
+              </VStack>
+            </ModalBody>
+            <ModalFooter>
+              <Button variant="ghost" mr={3} onClick={onCleanupClose}>
+                Cancel
+              </Button>
+              <Button
+                colorScheme="red"
+                onClick={handleCleanup}
+                isLoading={cleanupOldExports.isPending}
+              >
+                Delete Old Exports
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
       </VStack>
     </Container>
   );

@@ -8,6 +8,7 @@ Handles conversion between different document formats:
 """
 
 import asyncio
+import json
 import os
 import tempfile
 import uuid
@@ -31,9 +32,15 @@ from pptx.util import Inches as PptxInches, Pt
 from pptx.enum.text import PP_ALIGN
 from pptx.dml.color import RGBColor
 
+from app.models.schemas import ExportMetadata, ExportFormat
+from app.services.export_metadata_manager import ExportMetadataManager
+
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
+
+# Initialize export metadata manager
+metadata_manager = ExportMetadataManager()
 
 
 class MarkdownConvertRequest(BaseModel):
@@ -57,7 +64,14 @@ async def convert_markdown_to_pdf(request: MarkdownConvertRequest):
     try:
         logger.info("Converting markdown to PDF", title=request.title)
         
-        # Create temporary directory for this conversion
+        # Generate unique export ID
+        export_id = str(uuid.uuid4())
+        
+        # Create exports directory if it doesn't exist
+        exports_dir = Path("exports")
+        exports_dir.mkdir(exist_ok=True)
+        
+        # Create temporary directory for conversion
         temp_dir = Path(tempfile.gettempdir()) / f"conversion_{uuid.uuid4()}"
         temp_dir.mkdir(exist_ok=True)
         
@@ -74,21 +88,56 @@ async def convert_markdown_to_pdf(request: MarkdownConvertRequest):
             await f.write(html_content)
         
         # Convert HTML to PDF using pdfkit
-        pdf_file = temp_dir / f"{request.title}.pdf"
+        temp_pdf_file = temp_dir / f"{request.title}.pdf"
         
         await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: _html_to_pdf_pdfkit(str(html_file), str(pdf_file))
+            lambda: _html_to_pdf_pdfkit(str(html_file), str(temp_pdf_file))
         )
         
-        logger.info("PDF conversion completed", file_path=str(pdf_file))
+        # Move PDF to exports directory
+        safe_title = "".join(c for c in request.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        final_filename = f"{safe_title}_{export_id}.pdf"
+        final_path = exports_dir / final_filename
+        
+        # Copy the file to the exports directory
+        async with aiofiles.open(temp_pdf_file, 'rb') as src:
+            content = await src.read()
+            async with aiofiles.open(final_path, 'wb') as dst:
+                await dst.write(content)
+        
+        # Get file size
+        file_size = final_path.stat().st_size
+        
+        # Create export metadata
+        export_metadata = ExportMetadata(
+            export_id=export_id,
+            research_topic=request.title,
+            task_id=f"direct_convert_{export_id}",  # Since this is direct conversion
+            export_date=datetime.utcnow(),
+            format=ExportFormat.PDF,
+            file_name=final_filename,
+            file_path=str(final_path),
+            file_size_bytes=file_size,
+            status="completed",
+            include_sources=False,  # Direct conversion doesn't include sources
+            include_metadata=False,
+            word_count=len(request.markdown_content.split()) if request.markdown_content else None
+        )
+        
+        # Save metadata
+        metadata_manager.save_export_metadata(export_metadata)
+        
+        logger.info("PDF conversion completed", file_path=str(final_path), export_id=export_id)
+        
+        # Clean up temporary directory
+        await _cleanup_temp_dir(temp_dir)
         
         # Return the PDF file
         return FileResponse(
-            path=str(pdf_file),
-            filename=f"{request.title}.pdf",
-            media_type="application/pdf",
-            background=lambda: asyncio.create_task(_cleanup_temp_dir(temp_dir))
+            path=str(final_path),
+            filename=final_filename,
+            media_type="application/pdf"
         )
         
     except Exception as e:
@@ -113,9 +162,12 @@ async def convert_markdown_to_html(request: MarkdownConvertRequest):
     try:
         logger.info("Converting markdown to HTML", title=request.title)
         
-        # Create temporary directory for this conversion
-        temp_dir = Path(tempfile.gettempdir()) / f"conversion_{uuid.uuid4()}"
-        temp_dir.mkdir(exist_ok=True)
+        # Generate unique export ID
+        export_id = str(uuid.uuid4())
+        
+        # Create exports directory if it doesn't exist
+        exports_dir = Path("exports")
+        exports_dir.mkdir(exist_ok=True)
         
         # Convert markdown to HTML
         html_content = await _markdown_to_html(
@@ -124,19 +176,43 @@ async def convert_markdown_to_html(request: MarkdownConvertRequest):
             request.css_style
         )
         
-        # Save HTML to temporary file
-        html_file = temp_dir / f"{request.title}.html"
-        async with aiofiles.open(html_file, 'w', encoding='utf-8') as f:
+        # Save HTML to exports directory
+        safe_title = "".join(c for c in request.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        final_filename = f"{safe_title}_{export_id}.html"
+        final_path = exports_dir / final_filename
+        
+        async with aiofiles.open(final_path, 'w', encoding='utf-8') as f:
             await f.write(html_content)
         
-        logger.info("HTML conversion completed", file_path=str(html_file))
+        # Get file size
+        file_size = final_path.stat().st_size
+        
+        # Create export metadata
+        export_metadata = ExportMetadata(
+            export_id=export_id,
+            research_topic=request.title,
+            task_id=f"direct_convert_{export_id}",  # Since this is direct conversion
+            export_date=datetime.utcnow(),
+            format=ExportFormat.HTML,
+            file_name=final_filename,
+            file_path=str(final_path),
+            file_size_bytes=file_size,
+            status="completed",
+            include_sources=False,  # Direct conversion doesn't include sources
+            include_metadata=False,
+            word_count=len(request.markdown_content.split()) if request.markdown_content else None
+        )
+        
+        # Save metadata
+        metadata_manager.save_export_metadata(export_metadata)
+        
+        logger.info("HTML conversion completed", file_path=str(final_path), export_id=export_id)
         
         # Return the HTML file
         return FileResponse(
-            path=str(html_file),
-            filename=f"{request.title}.html",
-            media_type="text/html",
-            background=lambda: asyncio.create_task(_cleanup_temp_dir(temp_dir))
+            path=str(final_path),
+            filename=final_filename,
+            media_type="text/html"
         )
         
     except Exception as e:
@@ -161,30 +237,76 @@ async def convert_markdown_to_docx(request: MarkdownConvertRequest):
     try:
         logger.info("Converting markdown to DOCX", title=request.title)
         
-        # Create temporary directory for this conversion
+        # Generate unique export ID
+        export_id = str(uuid.uuid4())
+        
+        # Create exports directory if it doesn't exist
+        exports_dir = Path("exports")
+        exports_dir.mkdir(exist_ok=True)
+        
+        # Create temporary directory for conversion
         temp_dir = Path(tempfile.gettempdir()) / f"conversion_{uuid.uuid4()}"
         temp_dir.mkdir(exist_ok=True)
         
         # Convert markdown to DOCX
-        docx_file = temp_dir / f"{request.title}.docx"
+        temp_docx_file = temp_dir / f"{request.title}.docx"
         
         await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: _markdown_to_docx(request.markdown_content, request.title, str(docx_file))
+            lambda: _markdown_to_docx(request.markdown_content, request.title, str(temp_docx_file))
         )
         
-        logger.info("DOCX conversion completed", file_path=str(docx_file))
+        # Move DOCX to exports directory
+        safe_title = "".join(c for c in request.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        final_filename = f"{safe_title}_{export_id}.docx"
+        final_path = exports_dir / final_filename
+        
+        # Copy the file to the exports directory
+        async with aiofiles.open(temp_docx_file, 'rb') as src:
+            content = await src.read()
+            async with aiofiles.open(final_path, 'wb') as dst:
+                await dst.write(content)
+        
+        # Get file size
+        file_size = final_path.stat().st_size
+        
+        # Create export metadata
+        export_metadata = ExportMetadata(
+            export_id=export_id,
+            research_topic=request.title,
+            task_id=f"direct_convert_{export_id}",  # Since this is direct conversion
+            export_date=datetime.utcnow(),
+            format=ExportFormat.DOCX,
+            file_name=final_filename,
+            file_path=str(final_path),
+            file_size_bytes=file_size,
+            status="completed",
+            include_sources=False,  # Direct conversion doesn't include sources
+            include_metadata=False,
+            word_count=len(request.markdown_content.split()) if request.markdown_content else None
+        )
+        
+        # Save metadata
+        metadata_manager.save_export_metadata(export_metadata)
+        
+        logger.info("DOCX conversion completed", file_path=str(final_path), export_id=export_id)
+        
+        # Clean up temporary directory
+        await _cleanup_temp_dir(temp_dir)
         
         # Return the DOCX file
         return FileResponse(
-            path=str(docx_file),
-            filename=f"{request.title}.docx",
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            background=lambda: asyncio.create_task(_cleanup_temp_dir(temp_dir))
+            path=str(final_path),
+            filename=final_filename,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
         
     except Exception as e:
         logger.error("DOCX conversion failed", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to convert to DOCX: {str(e)}"
+        )
         raise HTTPException(
             status_code=500,
             detail=f"Failed to convert to DOCX: {str(e)}"
@@ -205,30 +327,222 @@ async def convert_markdown_to_pptx(request: MarkdownConvertRequest):
     try:
         logger.info("Converting markdown to PPTX", title=request.title)
         
-        # Create temporary directory for this conversion
+        # Generate unique export ID
+        export_id = str(uuid.uuid4())
+        
+        # Create exports directory if it doesn't exist
+        exports_dir = Path("exports")
+        exports_dir.mkdir(exist_ok=True)
+        
+        # Create temporary directory for conversion
         temp_dir = Path(tempfile.gettempdir()) / f"conversion_{uuid.uuid4()}"
         temp_dir.mkdir(exist_ok=True)
         
         # Convert markdown to PPTX
-        pptx_file = temp_dir / f"{request.title}.pptx"
+        temp_pptx_file = temp_dir / f"{request.title}.pptx"
         
         await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: _markdown_to_pptx(request.markdown_content, request.title, str(pptx_file))
+            lambda: _markdown_to_pptx(request.markdown_content, request.title, str(temp_pptx_file))
         )
         
-        logger.info("PPTX conversion completed", file_path=str(pptx_file))
+        # Move PPTX to exports directory
+        safe_title = "".join(c for c in request.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        final_filename = f"{safe_title}_{export_id}.pptx"
+        final_path = exports_dir / final_filename
+        
+        # Copy the file to the exports directory
+        async with aiofiles.open(temp_pptx_file, 'rb') as src:
+            content = await src.read()
+            async with aiofiles.open(final_path, 'wb') as dst:
+                await dst.write(content)
+        
+        # Get file size
+        file_size = final_path.stat().st_size
+        
+        # Create export metadata
+        export_metadata = ExportMetadata(
+            export_id=export_id,
+            research_topic=request.title,
+            task_id=f"direct_convert_{export_id}",  # Since this is direct conversion
+            export_date=datetime.utcnow(),
+            format=ExportFormat.PPTX,
+            file_name=final_filename,
+            file_path=str(final_path),
+            file_size_bytes=file_size,
+            status="completed",
+            include_sources=False,  # Direct conversion doesn't include sources
+            include_metadata=False,
+            word_count=len(request.markdown_content.split()) if request.markdown_content else None
+        )
+        
+        # Save metadata
+        metadata_manager.save_export_metadata(export_metadata)
+        
+        logger.info("PPTX conversion completed", file_path=str(final_path), export_id=export_id)
+        
+        # Clean up temporary directory
+        await _cleanup_temp_dir(temp_dir)
         
         # Return the PPTX file
         return FileResponse(
-            path=str(pptx_file),
-            filename=f"{request.title}.pptx",
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            background=lambda: asyncio.create_task(_cleanup_temp_dir(temp_dir))
+            path=str(final_path),
+            filename=final_filename,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
         )
         
     except Exception as e:
         logger.error("PPTX conversion failed", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to convert to PPTX: {str(e)}"
+        )
+
+
+@router.post("/markdown-export")
+async def export_markdown(request: MarkdownConvertRequest):
+    """
+    Export pure Markdown content with metadata tracking.
+    
+    Args:
+        request: Markdown export request
+        
+    Returns:
+        Markdown file response
+    """
+    try:
+        logger.info("Exporting markdown", title=request.title)
+        
+        # Generate unique export ID
+        export_id = str(uuid.uuid4())
+        
+        # Create exports directory if it doesn't exist
+        exports_dir = Path("exports")
+        exports_dir.mkdir(exist_ok=True)
+        
+        # Save markdown to exports directory
+        safe_title = "".join(c for c in request.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        final_filename = f"{safe_title}_{export_id}.md"
+        final_path = exports_dir / final_filename
+        
+        async with aiofiles.open(final_path, 'w', encoding='utf-8') as f:
+            await f.write(request.markdown_content)
+        
+        # Get file size
+        file_size = final_path.stat().st_size
+        
+        # Create export metadata
+        export_metadata = ExportMetadata(
+            export_id=export_id,
+            research_topic=request.title,
+            task_id=f"direct_export_{export_id}",  # Since this is direct export
+            export_date=datetime.utcnow(),
+            format=ExportFormat.MARKDOWN,
+            file_name=final_filename,
+            file_path=str(final_path),
+            file_size_bytes=file_size,
+            status="completed",
+            include_sources=False,  # Direct export doesn't include sources
+            include_metadata=False,
+            word_count=len(request.markdown_content.split()) if request.markdown_content else None
+        )
+        
+        # Save metadata
+        metadata_manager.save_export_metadata(export_metadata)
+        
+        logger.info("Markdown export completed", file_path=str(final_path), export_id=export_id)
+        
+        # Return the markdown file
+        return FileResponse(
+            path=str(final_path),
+            filename=final_filename,
+            media_type="text/markdown"
+        )
+        
+    except Exception as e:
+        logger.error("Markdown export failed", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to export markdown: {str(e)}"
+        )
+
+
+@router.post("/json-export")
+async def export_json(request: MarkdownConvertRequest):
+    """
+    Export JSON content with metadata tracking.
+    
+    Args:
+        request: Markdown export request (content will be converted to JSON)
+        
+    Returns:
+        JSON file response
+    """
+    try:
+        logger.info("Exporting JSON", title=request.title)
+        
+        # Generate unique export ID
+        export_id = str(uuid.uuid4())
+        
+        # Create exports directory if it doesn't exist
+        exports_dir = Path("exports")
+        exports_dir.mkdir(exist_ok=True)
+        
+        # Create JSON content
+        json_content = {
+            "title": request.title,
+            "content": request.markdown_content,
+            "format": "markdown",
+            "exported_at": datetime.utcnow().isoformat(),
+            "export_id": export_id
+        }
+        
+        # Save JSON to exports directory
+        safe_title = "".join(c for c in request.title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        final_filename = f"{safe_title}_{export_id}.json"
+        final_path = exports_dir / final_filename
+        
+        async with aiofiles.open(final_path, 'w', encoding='utf-8') as f:
+            import json
+            await f.write(json.dumps(json_content, indent=2))
+        
+        # Get file size
+        file_size = final_path.stat().st_size
+        
+        # Create export metadata
+        export_metadata = ExportMetadata(
+            export_id=export_id,
+            research_topic=request.title,
+            task_id=f"direct_export_{export_id}",  # Since this is direct export
+            export_date=datetime.utcnow(),
+            format=ExportFormat.JSON,
+            file_name=final_filename,
+            file_path=str(final_path),
+            file_size_bytes=file_size,
+            status="completed",
+            include_sources=False,  # Direct export doesn't include sources
+            include_metadata=False,
+            word_count=len(request.markdown_content.split()) if request.markdown_content else None
+        )
+        
+        # Save metadata
+        metadata_manager.save_export_metadata(export_metadata)
+        
+        logger.info("JSON export completed", file_path=str(final_path), export_id=export_id)
+        
+        # Return the JSON file
+        return FileResponse(
+            path=str(final_path),
+            filename=final_filename,
+            media_type="application/json"
+        )
+        
+    except Exception as e:
+        logger.error("JSON export failed", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to export JSON: {str(e)}"
+        )
         raise HTTPException(
             status_code=500,
             detail=f"Failed to convert to PPTX: {str(e)}"

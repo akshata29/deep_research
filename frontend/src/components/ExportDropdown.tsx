@@ -120,6 +120,68 @@ export const ExportDropdown: React.FC<ExportDropdownProps> = ({
     }, null, 2);
   };
 
+  const downloadMarkdown = async (content: string, title: string) => {
+    try {
+      const response = await fetch('/api/v1/export/markdown-export', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          markdown_content: content,
+          title: title,
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to export markdown');
+      }
+      
+      const markdownBlob = await response.blob();
+      const url = window.URL.createObjectURL(markdownBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${title}.md`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const downloadJson = async (content: string, title: string) => {
+    try {
+      const response = await fetch('/api/v1/export/json-export', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          markdown_content: content,
+          title: title,
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to export JSON');
+      }
+      
+      const jsonBlob = await response.blob();
+      const url = window.URL.createObjectURL(jsonBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${title}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      throw error;
+    }
+  };
+
   const downloadHtml = async (content: string, title: string) => {
     try {
       const response = await fetch('/api/v1/export/markdown-to-html', {
@@ -366,7 +428,7 @@ export const ExportDropdown: React.FC<ExportDropdownProps> = ({
       
       switch (format) {
         case 'markdown':
-          downloadFile(reportContent, filename, 'text/markdown');
+          await downloadMarkdown(reportContent, titleFromContent);
           break;
         
         case 'html':
@@ -374,8 +436,7 @@ export const ExportDropdown: React.FC<ExportDropdownProps> = ({
           break;
         
         case 'json':
-          const jsonContent = convertToJson(reportContent, reportTitle);
-          downloadFile(jsonContent, filename, 'application/json');
+          await downloadJson(reportContent, titleFromContent);
           break;
         
         case 'pdf':

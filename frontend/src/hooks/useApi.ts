@@ -5,6 +5,9 @@ import {
   ResearchRequest,
   ResearchResponse,
   UserSettings,
+  SessionCreateRequest,
+  SessionUpdateRequest,
+  SessionRestoreRequest,
 } from '@/types';
 
 // Health check hook
@@ -214,10 +217,15 @@ export const useDeleteExport = () => {
   });
 };
 
-export const useExports = () => {
+export const useExports = (params?: {
+  limit?: number;
+  offset?: number;
+  format_filter?: string;
+  status_filter?: string;
+}) => {
   return useQuery({
-    queryKey: ['exports'],
-    queryFn: () => apiClient.listExports(),
+    queryKey: ['exports', params],
+    queryFn: () => apiClient.listExports(params),
     refetchInterval: 15000, // Refresh every 15 seconds
   });
 };
@@ -392,5 +400,130 @@ export const useSystemHealth = () => {
       active_tasks: Math.floor(Math.random() * 10),
       queue_size: Math.floor(Math.random() * 5),
     }),
+  });
+};
+
+export const useStorageStats = () => {
+  return useQuery({
+    queryKey: ['export-storage-stats'],
+    queryFn: () => apiClient.getStorageStats(),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+};
+
+export const useCleanupOldExports = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (daysOld: number = 30) => apiClient.cleanupOldExports(daysOld),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['exports'] });
+      queryClient.invalidateQueries({ queryKey: ['export-storage-stats'] });
+    },
+  });
+};
+
+// Session hooks
+export const useCreateSession = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (request: SessionCreateRequest) => apiClient.createSession(request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+  });
+};
+
+export const useListSessions = (params?: {
+  page?: number;
+  page_size?: number;
+  status_filter?: string;
+  tag_filter?: string;
+  search_query?: string;
+}) => {
+  return useQuery({
+    queryKey: ['sessions', params],
+    queryFn: () => apiClient.listSessions(params),
+    staleTime: 30 * 1000, // 30 seconds
+  });
+};
+
+export const useGetSession = (sessionId: string, enabled: boolean = true) => {
+  return useQuery({
+    queryKey: ['session', sessionId],
+    queryFn: () => apiClient.getSession(sessionId),
+    enabled: enabled && !!sessionId,
+  });
+};
+
+export const useUpdateSession = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ sessionId, request }: { sessionId: string; request: SessionUpdateRequest }) => 
+      apiClient.updateSession(sessionId, request),
+    onSuccess: (_, { sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['session', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+  });
+};
+
+export const useDeleteSession = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (sessionId: string) => apiClient.deleteSession(sessionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+  });
+};
+
+export const useSaveSessionState = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ sessionId, stateData }: { sessionId: string; stateData: any }) => 
+      apiClient.saveSessionState(sessionId, stateData),
+    onSuccess: (_, { sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['session', sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+  });
+};
+
+export const useRestoreSession = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ sessionId, request }: { sessionId: string; request: SessionRestoreRequest }) => 
+      apiClient.restoreSession(sessionId, request),
+    onSuccess: () => {
+      // Invalidate all research-related queries since we're restoring state
+      queryClient.invalidateQueries({ queryKey: ['research-status'] });
+      queryClient.invalidateQueries({ queryKey: ['research-report'] });
+    },
+  });
+};
+
+export const useSessionStorageStats = () => {
+  return useQuery({
+    queryKey: ['session-storage-stats'],
+    queryFn: () => apiClient.getSessionStorageStats(),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+};
+
+export const useCleanupOldSessions = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (daysOld: number = 90) => apiClient.cleanupOldSessions(daysOld),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['session-storage-stats'] });
+    },
   });
 };

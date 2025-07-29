@@ -5,14 +5,18 @@ import {
   useExecuteResearch, 
   useExecuteResearchWithTavily,
   useGenerateFinalReport,
-  useLocalSettings 
+  useLocalSettings,
+  useCreateSession
 } from './useApi';
 import { ResearchRequest } from '@/types';
 import { extractQuestionsFromText } from '@/utils/jsonContentParser';
 
 export interface DeepResearchState {
   // Current phase of research
-  phase: 'topic' | 'questions' | 'feedback' | 'research' | 'report';
+  phase: 'topic' | 'questions' | 'feedback' | 'research' | 'report' | 'completed';
+  
+  // Session management
+  sessionId: string | null;
   
   // Research data
   topic: string;
@@ -43,6 +47,7 @@ export interface SearchTask {
 
 const initialState: DeepResearchState = {
   phase: 'topic',
+  sessionId: null,
   topic: '',
   questions: '',
   feedback: '',
@@ -58,7 +63,6 @@ const initialState: DeepResearchState = {
 
 export const useDeepResearch = () => {
   const [state, setState] = useState<DeepResearchState>(initialState);
-  const [, forceRender] = useState(0); // Force re-render helper
   const { data: settings } = useLocalSettings();
   
   // New phase-specific mutations
@@ -67,6 +71,7 @@ export const useDeepResearch = () => {
   const executeResearchMutation = useExecuteResearch();
   const executeResearchWithTavilyMutation = useExecuteResearchWithTavily();
   const generateFinalReportMutation = useGenerateFinalReport();
+  const createSessionMutation = useCreateSession();
 
   // Get default models from settings or fallback to defaults
   const getDefaultModels = useCallback(() => {
@@ -76,8 +81,7 @@ export const useDeepResearch = () => {
     };
   }, [settings]);
 
-  const updateState = (updates: Partial<DeepResearchState>) => {
-    console.log('updateState called with:', updates);
+  const updateState = useCallback((updates: Partial<DeepResearchState>) => {
     setState(prev => {
       const newState = { ...prev, ...updates };
       console.log('State transition:', { 
@@ -86,18 +90,37 @@ export const useDeepResearch = () => {
       });
       return newState;
     });
-    // Force component re-render
-    forceRender(prev => prev + 1);
-  };
+  }, []);
 
   const createNewResearch = () => {
     setState(initialState);
   };
 
+  // Automatically create session if one doesn't exist
+  const ensureSession = async (topic: string) => {
+    if (state.sessionId) {
+      return state.sessionId; // Session already exists
+    }
+
+    try {
+      const session = await createSessionMutation.mutateAsync({
+        title: `Research: ${topic.length > 50 ? topic.substring(0, 50) + '...' : topic}`,
+        description: `Automated research session for: ${topic}`,
+        topic: topic,
+        tags: ['auto-generated', 'research']
+      });
+
+      updateState({ sessionId: session.session_id });
+      return session.session_id;
+    } catch (error) {
+      console.error('Failed to create session:', error);
+      return null; // Continue without session
+    }
+  };
+
   // Phase 1: Ask Questions (Direct API Call)
   const askQuestions = async (topic: string) => {
-    console.log('=== ASK QUESTIONS STARTED ===');
-    console.log('Topic:', topic);
+    console.log('Starting question generation for topic:', topic);
     
     updateState({ 
       isThinking: true, 
@@ -105,32 +128,30 @@ export const useDeepResearch = () => {
       phase: 'questions',
       status: 'Generating clarifying questions...' 
     });
-    console.log('State updated to questions phase with isThinking=true');
 
     try {
+      // Ensure session exists before starting research
+      const sessionId = await ensureSession(topic);
+      
       const request: ResearchRequest = {
         prompt: `"${topic}"`,
         models_config: getDefaultModels(),
         execution_mode: settings?.executionMode || 'agents',
         research_depth: 'standard',
         enable_web_search: false,
-        language: 'en'
+        language: 'en',
+        session_id: sessionId || undefined
       };
 
-      console.log('About to call generateQuestionsMutation with request:', request);
+      console.log('Calling API to generate questions...');
       const response = await generateQuestionsMutation.mutateAsync(request);
-      console.log('=== API RESPONSE RECEIVED ===');
-      console.log('Full response:', response);
-      console.log('Response report:', response.report);
-      console.log('Response sections:', response.report?.sections);
       
       // Extract questions from response
       const questionsText = response.report?.sections?.map(s => s.content).join('\n\n') || 
                            response.report?.executive_summary || 
                            'Questions generated successfully';
       
-      console.log('Extracted questions text:', questionsText);
-      console.log('=== UPDATING STATE TO FEEDBACK PHASE ===');
+      console.log('Questions generated, transitioning to feedback phase');
       
       updateState({ 
         questions: questionsText,
@@ -139,10 +160,7 @@ export const useDeepResearch = () => {
         isThinking: false
       });
       
-      console.log('State updated - should transition to feedback phase');
-      
     } catch (error) {
-      console.error('=== ERROR IN ASK QUESTIONS ===');
       console.error('Error generating questions:', error);
       updateState({ 
         status: 'Error generating questions',
@@ -166,7 +184,8 @@ export const useDeepResearch = () => {
         execution_mode: settings?.executionMode || 'agents',
         research_depth: 'standard',
         enable_web_search: false,
-        language: 'en'
+        language: 'en',
+        session_id: state.sessionId || undefined
       };
 
       // Extract questions as array from the questions text
@@ -198,7 +217,7 @@ export const useDeepResearch = () => {
         isThinking: false 
       });
     }
-  }, [state.topic, createResearchPlanMutation, updateState, getDefaultModels, settings?.executionMode]);
+  }, [state.topic, state.questions, createResearchPlanMutation, updateState, getDefaultModels, settings?.executionMode, state.sessionId]);
 
   // Phase 3: Execute Search Tasks (Direct API Call)
   const runSearchTasks = useCallback(async () => {
@@ -218,7 +237,8 @@ export const useDeepResearch = () => {
         execution_mode: settings?.executionMode || 'agents',
         research_depth: 'deep',
         enable_web_search: true,
-        language: 'en'
+        language: 'en',
+        session_id: state.sessionId || undefined
       };
 
       // Use the selected search method from user settings
@@ -260,7 +280,7 @@ export const useDeepResearch = () => {
         isResearching: false 
       });
     }
-  }, [state.reportPlan, state.topic, executeResearchMutation, executeResearchWithTavilyMutation, updateState, getDefaultModels, settings?.executionMode, settings?.searchMethod]);
+  }, [state.reportPlan, state.topic, state.searchTasks.length, executeResearchMutation, executeResearchWithTavilyMutation, updateState, getDefaultModels, settings?.executionMode, settings?.searchMethod, state.sessionId]);
 
   // Phase 4: Write Final Report (Direct API Call)
   const writeFinalReport = useCallback(async (requirement?: string) => {
@@ -289,7 +309,8 @@ export const useDeepResearch = () => {
           execution_mode: settings?.executionMode || 'agents',
           research_depth: 'deep',
           enable_web_search: false,
-          language: 'en'
+          language: 'en',
+          session_id: state.sessionId || undefined
         }
       });
       
@@ -300,6 +321,7 @@ export const useDeepResearch = () => {
       
       updateState({ 
         finalReport,
+        phase: 'completed',
         status: 'Final report completed successfully',
         isWriting: false
       });
@@ -311,7 +333,11 @@ export const useDeepResearch = () => {
         isWriting: false 
       });
     }
-  }, [state.topic, state.reportPlan, state.searchTasks, generateFinalReportMutation, updateState, getDefaultModels, settings?.executionMode]);
+  }, [state.topic, state.reportPlan, state.searchTasks, generateFinalReportMutation, updateState, getDefaultModels, settings?.executionMode, state.sessionId]);
+
+  const setSessionId = (sessionId: string | null) => {
+    updateState({ sessionId });
+  };
 
   return {
     // State
@@ -324,5 +350,6 @@ export const useDeepResearch = () => {
     runSearchTasks,
     writeFinalReport,
     updateState,
+    setSessionId,
   };
 };

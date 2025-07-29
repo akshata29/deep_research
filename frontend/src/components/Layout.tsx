@@ -1,4 +1,4 @@
-import React, { ReactNode } from 'react';
+import { ReactNode } from 'react';
 import {
   Box,
   Flex,
@@ -46,12 +46,14 @@ const NavItem = ({
   to, 
   icon, 
   children, 
-  isActive = false 
+  isActive = false,
+  onClick
 }: { 
   to: string; 
-  icon: ReactNode; 
+  icon: React.ReactElement; 
   children: ReactNode; 
   isActive?: boolean;
+  onClick?: () => void;
 }) => {
   return (
     <Button
@@ -63,6 +65,7 @@ const NavItem = ({
       width="full"
       size="sm"
       fontWeight={isActive ? 'semibold' : 'normal'}
+      onClick={onClick}
     >
       {children}
     </Button>
@@ -76,6 +79,7 @@ const Navigation = ({ onClose }: { onClose?: () => void }) => {
     { to: '/', icon: <Home size={16} />, label: 'Home' },
     { to: '/research', icon: <Search size={16} />, label: 'Research' },
     { to: '/exports', icon: <FileText size={16} />, label: 'Exports' },
+    { to: '/sessions', icon: <BarChart3 size={16} />, label: 'Sessions' },
     { to: '/settings', icon: <Settings size={16} />, label: 'Settings' },
   ];
 

@@ -161,6 +161,26 @@ class ExportRequest(BaseModel):
     custom_branding: Optional[Dict[str, str]] = Field(default=None, description="Custom branding options")
 
 
+class ExportMetadata(BaseModel):
+    """Metadata for export tracking."""
+    export_id: str = Field(..., description="Export identifier")
+    research_topic: str = Field(..., description="Research topic/title")
+    task_id: str = Field(..., description="Original research task ID")
+    export_date: datetime = Field(default_factory=datetime.utcnow, description="Export creation date")
+    format: ExportFormat = Field(..., description="Export format")
+    file_name: str = Field(..., description="Generated file name")
+    file_path: str = Field(..., description="File storage path")
+    file_size_bytes: int = Field(default=0, description="File size in bytes")
+    status: str = Field(default="processing", description="Export status")
+    download_count: int = Field(default=0, description="Number of times downloaded")
+    last_accessed: Optional[datetime] = Field(default=None, description="Last access time")
+    include_sources: bool = Field(default=True, description="Whether sources were included")
+    include_metadata: bool = Field(default=True, description="Whether metadata was included")
+    template_name: Optional[str] = Field(default=None, description="Template used for PPTX")
+    word_count: Optional[int] = Field(default=None, description="Report word count")
+    sections_count: Optional[int] = Field(default=None, description="Number of sections")
+
+
 class ExportResponse(BaseModel):
     """Export API response."""
     export_id: str = Field(default_factory=lambda: str(uuid4()), description="Export identifier")
@@ -169,6 +189,7 @@ class ExportResponse(BaseModel):
     file_size_bytes: Optional[int] = Field(default=None, description="File size in bytes")
     expires_at: Optional[datetime] = Field(default=None, description="Download link expiration")
     format: ExportFormat = Field(..., description="Export format")
+    metadata: Optional[ExportMetadata] = Field(default=None, description="Export metadata")
 
 
 class HealthStatus(BaseModel):
@@ -258,3 +279,88 @@ class CustomExportRequest(BaseModel):
     slide_titles: List[str] = Field(..., description="List of slide titles for the PowerPoint template")
     topic: str = Field(..., description="Research topic")
     request: Optional[ResearchRequest] = Field(default=None, description="Base research request configuration")
+
+
+# Session History Models
+class SessionPhase(str, Enum):
+    """Research session phase."""
+    TOPIC = "topic"
+    QUESTIONS = "questions"
+    FEEDBACK = "feedback"
+    RESEARCH = "research"
+    REPORT = "report"
+    COMPLETED = "completed"
+
+
+class SearchTask(BaseModel):
+    """Individual search task within a research session."""
+    query: str = Field(..., description="Search query")
+    research_goal: str = Field(..., description="Research objective for this task")
+    state: str = Field(..., description="Current state: unprocessed, processing, completed, failed")
+    learning: str = Field(default="", description="Learning/findings from this task")
+    sources: List[Dict[str, str]] = Field(default_factory=list, description="Sources found")
+    images: List[Dict[str, str]] = Field(default_factory=list, description="Images found")
+
+
+class ResearchSession(BaseModel):
+    """Complete research session data."""
+    session_id: str = Field(..., description="Unique session identifier")
+    created_at: datetime = Field(..., description="Session creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+    title: str = Field(..., description="Session title/topic")
+    description: str = Field(default="", description="Session description")
+    
+    # Research pipeline state
+    current_phase: SessionPhase = Field(default=SessionPhase.TOPIC, description="Current research phase")
+    topic: str = Field(default="", description="Research topic")
+    questions: str = Field(default="", description="Generated questions")
+    feedback: str = Field(default="", description="User feedback on questions")
+    report_plan: str = Field(default="", description="Research plan")
+    search_tasks: List[SearchTask] = Field(default_factory=list, description="Search tasks")
+    final_report: str = Field(default="", description="Final research report")
+    
+    # Task references and metadata
+    task_ids: List[str] = Field(default_factory=list, description="Associated research task IDs")
+    research_config: Optional[ResearchRequest] = Field(default=None, description="Research configuration")
+    
+    # Session statistics
+    total_tokens_used: int = Field(default=0, description="Total tokens consumed")
+    total_sources_found: int = Field(default=0, description="Total sources discovered")
+    session_duration_minutes: int = Field(default=0, description="Session duration")
+    completion_percentage: float = Field(default=0.0, description="Session completion percentage")
+    
+    # Status and metadata
+    status: str = Field(default="active", description="Session status: active, completed, archived")
+    tags: List[str] = Field(default_factory=list, description="Session tags for organization")
+    notes: str = Field(default="", description="User notes about the session")
+
+
+class SessionListResponse(BaseModel):
+    """Response for session list operations."""
+    sessions: List[ResearchSession] = Field(..., description="List of research sessions")
+    total_count: int = Field(..., description="Total number of sessions")
+    page: int = Field(default=1, description="Current page number")
+    page_size: int = Field(default=20, description="Number of sessions per page")
+
+
+class SessionCreateRequest(BaseModel):
+    """Request to create a new research session."""
+    title: str = Field(..., description="Session title")
+    description: str = Field(default="", description="Session description")
+    topic: str = Field(default="", description="Initial research topic")
+    tags: List[str] = Field(default_factory=list, description="Session tags")
+
+
+class SessionUpdateRequest(BaseModel):
+    """Request to update an existing research session."""
+    title: Optional[str] = Field(default=None, description="Updated session title")
+    description: Optional[str] = Field(default=None, description="Updated session description")
+    tags: Optional[List[str]] = Field(default=None, description="Updated session tags")
+    notes: Optional[str] = Field(default=None, description="Updated user notes")
+    status: Optional[str] = Field(default=None, description="Updated session status")
+
+
+class SessionRestoreRequest(BaseModel):
+    """Request to restore a session to the current research context."""
+    session_id: str = Field(..., description="Session ID to restore")
+    continue_from_phase: Optional[SessionPhase] = Field(default=None, description="Phase to continue from")

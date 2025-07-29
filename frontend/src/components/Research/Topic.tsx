@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -34,6 +34,7 @@ export const Topic: React.FC = () => {
   const { 
     isThinking, 
     status,
+    topic,
     askQuestions, 
     createNewResearch 
   } = useDeepResearchContext();
@@ -43,9 +44,20 @@ export const Topic: React.FC = () => {
     handleSubmit,
     formState: { errors },
     reset,
+    setValue,
   } = useForm<FormData>({
     resolver: zodResolver(formSchema),
+    defaultValues: {
+      topic: topic || '',
+    },
   });
+
+  // Update form when topic changes (from session restoration)
+  useEffect(() => {
+    if (topic) {
+      setValue('topic', topic);
+    }
+  }, [topic, setValue]);
 
   const defaultTopicValue = `Deep Company Analysis of NVIDIA Corporation (NVDA): Comprehensive Evaluation of Business Overview, Financial Performance, Growth Opportunities, Market Risks, and Strategic Positioning
 
@@ -77,7 +89,7 @@ Appendix (Board of Directors overview, recent financial statements, additional s
 
   const handleNewResearch = () => {
     createNewResearch();
-    reset();
+    reset({ topic: '' });
   };
 
   return (
@@ -108,7 +120,7 @@ Appendix (Board of Directors overview, recent financial statements, additional s
                   <Textarea
                     {...register('topic')}
                     placeholder="Any questions you want to know..."
-                    defaultValue={defaultTopicValue}
+                    // defaultValue={defaultTopicValue}
                     rows={8}
                     disabled={isThinking}
                   />

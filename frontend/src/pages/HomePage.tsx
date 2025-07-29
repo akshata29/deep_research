@@ -19,8 +19,8 @@ import {
   useColorModeValue,
 } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
-import { Brain, FileText, Zap, Users } from 'lucide-react';
-import { useHealth, useResearchTasks, useExports } from '@/hooks/useApi';
+import { Brain, FileText, Zap, Users, Clock } from 'lucide-react';
+import { useHealth, useListSessions, useSessionStorageStats } from '@/hooks/useApi';
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
@@ -28,27 +28,49 @@ export const HomePage: React.FC = () => {
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   
   const { data: health } = useHealth();
-  const { data: tasks } = useResearchTasks();
-  const { data: exports } = useExports();
+  const { data: sessionsData } = useListSessions();
+  const { data: sessionStats } = useSessionStorageStats();
+
+  // Calculate statistics from session data
+  const sessions = sessionsData?.sessions || [];
+  
+  // Use session storage stats for more accurate counts, with fallback to calculated values
+  const activeResearchTasks = sessionStats?.data?.active_sessions || 
+    sessions.filter(s => 
+      s.status === 'active' && 
+      s.current_phase !== 'completed'
+    ).length;
+  
+  const completedReports = sessionStats?.data?.completed_sessions ||
+    sessions.filter(s => 
+      s.status === 'completed' || 
+      s.current_phase === 'completed'
+    ).length;
+
+  // Calculate in-progress sessions (active sessions that are past the initial phases)
+  const inProgressSessions = sessions.filter(s => 
+    s.status === 'active' && 
+    ['research', 'report'].includes(s.current_phase)
+  ).length;
 
   const stats = [
     {
       label: 'Active Research Tasks',
-      value: tasks?.tasks?.filter(t => t.status === 'processing').length || 0,
+      value: activeResearchTasks,
       helpText: 'Currently running',
       icon: Brain,
     },
     {
       label: 'Completed Reports',
-      value: tasks?.tasks?.filter(t => t.status === 'completed').length || 0,
-      helpText: 'This month',
+      value: completedReports,
+      helpText: 'Total completed',
       icon: FileText,
     },
     {
-      label: 'Total Exports',
-      value: exports?.total_count || 0,
-      helpText: 'All time',
-      icon: FileText,
+      label: 'In Progress',
+      value: inProgressSessions,
+      helpText: 'Research & reporting',
+      icon: Clock,
     },
     {
       label: 'System Health',
@@ -179,10 +201,10 @@ export const HomePage: React.FC = () => {
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => navigate('/research')}
-                  leftIcon={<Icon as={FileText} />}
+                  onClick={() => navigate('/sessions')}
+                  leftIcon={<Icon as={Users} />}
                 >
-                  Continue Previous
+                  View Sessions
                 </Button>
                 <Button
                   variant="outline"
