@@ -85,7 +85,8 @@ class ExportService:
             "default": "default_template.pptx",
             "business": "business_template.pptx",
             "academic": "academic_template.pptx",
-            "executive": "executive_template.pptx"
+            "executive": "executive_template.pptx",
+            "sample": "sample_template.pptx"
         }
         
         # Ensure templates exist
@@ -972,7 +973,7 @@ class ExportService:
         self,
         slides_data: Dict[str, Any],
         topic: str,
-        template_name: str = "business"
+        template_name: str = "sample"
     ) -> str:
         """
         Create a custom PowerPoint presentation from structured slide data.

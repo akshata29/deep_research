@@ -24,6 +24,7 @@ from app.models.schemas import (
 from app.services.research_orchestrator import ResearchOrchestrator
 from app.services.ai_agent_service import AIAgentService
 from app.services.web_search_service import WebSearchService
+from app.services.tavily_search_service import TavilySearchService
 
 
 router = APIRouter()
@@ -793,16 +794,16 @@ async def generate_questions(
         now = datetime.now().isoformat()
 
         questions_prompt = f"""
-Given the following query from the user, ask at least 5 follow-up questions to clarify the research direction:
+        Given the following query from the user, ask at least 5 follow-up questions to clarify the research direction:
 
-<QUERY>
-{request.prompt}
-</QUERY>
+        <QUERY>
+        {request.prompt}
+        </QUERY>
 
-Questions need to be brief and concise. No need to output content that is irrelevant to the question.
+        Questions need to be brief and concise. No need to output content that is irrelevant to the question.
 
-**Respond in the same language as the user's language**
-"""
+        **Respond in the same language as the user's language**
+        """
 
 
         # Use thinking model for question generation with unique agent name
@@ -863,7 +864,9 @@ async def create_research_plan(
         
         plan_prompt = f"""
 Given the following query from the user:
-<QUERY> "{request_data.topic}"
+<QUERY> 
+Initial Query: 
+{request_data.topic}
 Follow-up Questions:
 {formatted_questions}
 Follow-up Feedback: "{request_data.feedback}"
@@ -939,26 +942,52 @@ async def execute_research(
 
         # Step 1: Generate search queries (without Bing grounding)
         research_prompt = f"""
-This is the report plan after user confirmation:
-<PLAN>
-    {request_data.plan}
-</PLAN>
+        This is the report plan after user confirmation:
+        <PLAN>
+        {request_data.plan}
+        </PLAN>
 
-Based on previous report plan, generate a list of Serp queries to further research the topic. Make sure each query is unique and not similar to each other.
+        Based on previous report plan, generate a list of Serp queries to further research the topic. Make sure each query is unique and not similar to each other.
 
-You MUST respond in **JSON** matching this **JSON schema**:
+        You MUST respond in **JSON** matching this **JSON schema**:
 
-Expected output:
+        ```json
+        {{
+            "type": "array",
+            "items": {{
+                "type": "object",
+                "properties": {{
+                    "query": {
+                        "type": "string",
+                        "description": "The SERP query."
+                    },
+                    "researchGoal": {
+                        "type": "string",
+                        "description": "First talk about the goal of the research that this query is meant to accomplish, then go deeper into how to advance the research once the results are found, mention additional research directions. Be as specific as possible, especially for additional research directions. JSON reserved words should be escaped."
+                    }
+                }},
+                "required": [
+                    "query",
+                    "researchGoal"
+                ],
+                "additionalProperties": false
+            }},
+            "description": "List of SERP queries.",
+            "$schema": "http://json-schema.org/draft-07/schema#"
+        }}
+        ```
 
-\`\`\`json
-[
-  {{
-    "query": "This is a sample query.",
-    "researchGoal": "This is the reason for the query."
-  }}
-]
-\`\`\`
-"""
+        Expected output:
+
+        \`\`\`json
+        [
+        {{
+            "query": "This is a sample query.",
+            "researchGoal": "This is the reason for the query."
+        }}
+        ]
+        \`\`\`
+        """
 
         ai_service = AIAgentService(azure_manager)
         agent_name = f"thinking-agent-execute-{request_data.request.models_config.get('thinking', 'gpt-4').replace('-', '')}"
@@ -976,8 +1005,20 @@ Expected output:
 
         # Parse the JSON response to extract queries
         try:
-            import json
-            queries_data = json.loads(queries_response.strip())
+            # Extract JSON from markdown code blocks if present
+            json_text = queries_response.strip()
+            if '```json' in json_text:
+                # Extract content between ```json and ```
+                start_marker = '```json'
+                end_marker = '```'
+                start_index = json_text.find(start_marker)
+                if start_index != -1:
+                    start_index += len(start_marker)
+                    end_index = json_text.find(end_marker, start_index)
+                    if end_index != -1:
+                        json_text = json_text[start_index:end_index].strip()
+            
+            queries_data = json.loads(json_text)
             if not isinstance(queries_data, list):
                 raise ValueError("Response is not a JSON array")
         except (json.JSONDecodeError, ValueError) as e:
@@ -1089,6 +1130,254 @@ Please provide comprehensive research findings for this specific query. Include 
         raise HTTPException(status_code=500, detail=f"Failed to execute research: {str(e)}")
 
 
+@router.post("/execute-tavily", response_model=ResearchResponse)
+async def execute_research_with_tavily(
+    request_data: ExecuteResearchRequest,
+    azure_manager: AzureServiceManager = Depends(get_azure_manager)
+):
+    """Execute research based on the plan using Tavily search instead of Bing grounding."""
+    try:
+        task_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+
+        # Step 1: Generate search queries (same as /execute - without Bing grounding)
+        research_prompt = f"""
+        This is the report plan after user confirmation:
+        <PLAN>
+        {request_data.plan}
+        </PLAN>
+
+        Based on previous report plan, generate a list of Serp queries to further research the topic. Make sure each query is unique and not similar to each other.
+
+        You MUST respond in **JSON** matching this **JSON schema**:
+
+        ```json
+        {{{{
+            "type": "array",
+            "items": {{{{
+                "type": "object",
+                "properties": {{{{
+                    "query": {{{{
+                        "type": "string",
+                        "description": "The SERP query."
+                    }}}},
+                    "researchGoal": {{{{
+                        "type": "string",
+                        "description": "First talk about the goal of the research that this query is meant to accomplish, then go deeper into how to advance the research once the results are found, mention additional research directions. Be as specific as possible, especially for additional research directions. JSON reserved words should be escaped."
+                    }}}}
+                }}}},
+                "required": [
+                    "query",
+                    "researchGoal"
+                ],
+                "additionalProperties": false
+            }}}},
+            "description": "List of SERP queries.",
+            "$schema": "http://json-schema.org/draft-07/schema#"
+        }}}}
+        ```
+
+        Expected output:
+
+        \\`\\`\\`json
+        [
+        {{{{
+            "query": "This is a sample query.",
+            "researchGoal": "This is the reason for the query."
+        }}}}
+        ]
+        \\`\\`\\`
+        """
+
+        ai_service = AIAgentService(azure_manager)
+        agent_name = f"thinking-agent-execute-tavily-{request_data.request.models_config.get('thinking', 'gpt-4').replace('-', '')}"
+        
+        # Step 1: Generate queries without Bing grounding (same as /execute)
+        logger.info("Step 1: Generating research queries for Tavily", task_id=task_id)
+        queries_response = await ai_service.generate_response(
+            system_prompt=system_prompt.replace("'todaynow'", now),
+            prompt=research_prompt,
+            model_name=request_data.request.models_config.get("thinking", "gpt-4"),
+            agent_name=agent_name,
+            max_tokens=4096,
+            use_bing_grounding=False  # No Bing grounding for query generation
+        )
+
+        # Parse the JSON response to extract queries (same as /execute)
+        try:
+            # Extract JSON from markdown code blocks if present
+            json_text = queries_response.strip()
+            if '```json' in json_text:
+                # Extract content between ```json and ```
+                start_marker = '```json'
+                end_marker = '```'
+                start_index = json_text.find(start_marker)
+                if start_index != -1:
+                    start_index += len(start_marker)
+                    end_index = json_text.find(end_marker, start_index)
+                    if end_index != -1:
+                        json_text = json_text[start_index:end_index].strip()
+            
+            queries_data = json.loads(json_text)
+            if not isinstance(queries_data, list):
+                raise ValueError("Response is not a JSON array")
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error("Failed to parse queries JSON", task_id=task_id, response=queries_response[:500], error=str(e))
+            # Fallback: treat as single query
+            queries_data = [{"query": request_data.topic, "researchGoal": "General research"}]
+
+        logger.info("Generated queries for Tavily search", task_id=task_id, query_count=len(queries_data))
+
+        # Step 2: Execute each query with Tavily search (NEW IMPLEMENTATION)
+        aggregated_findings = []
+        tavily_service = TavilySearchService()
+        task_agent_name = f"task-agent-tavily-{request_data.request.models_config.get('task', 'gpt-4').replace('-', '')}"
+        
+        for i, query_item in enumerate(queries_data):
+            query = query_item.get("query", "")
+            research_goal = query_item.get("researchGoal", "")
+            
+            if not query.strip():
+                continue
+                
+            logger.info(f"Step 2: Executing Tavily search {i+1}/{len(queries_data)}", task_id=task_id, query=query[:100])
+            
+            try:
+                # Perform Tavily search
+                search_results = await tavily_service.search_and_format(
+                    query=query,
+                    research_goal=research_goal,
+                    max_results=5
+                )
+                
+                context = search_results["context"]
+                sources = search_results["sources"]
+                images = search_results["images"]
+                
+                # Create search prompt for LLM with Tavily results
+                search_prompt = f"""Given the following contexts from a SERP search for the query:
+<QUERY>
+{query}
+</QUERY>
+
+You need to organize the searched information according to the following requirements:
+<RESEARCH_GOAL>
+{research_goal}
+</RESEARCH_GOAL>
+
+The following context from the SERP search:
+<CONTEXT>
+{context}
+</CONTEXT>
+
+You need to think like a human researcher.
+Generate a list of learnings from the contexts.
+Make sure each learning is unique and not similar to each other.
+The learnings should be to the point, as detailed and information dense as possible.
+Make sure to include any entities like people, places, companies, products, things, etc in the learnings, as well as any specific entities, metrics, numbers, and dates when available. The learnings will be used to research the topic further.
+
+Citation Rules:
+
+- Please cite the context at the end of sentences when appropriate.
+- Please use the format of citation number [number] to reference the context in corresponding parts of your answer.
+- If a sentence comes from multiple contexts, please list all relevant citation numbers, e.g., [1][2]. Remember not to group citations at the end but list them in the corresponding parts of your answer.
+
+**Respond in the same language as the user's language**
+"""
+                
+                # Generate response using task model without grounding
+                query_response = await ai_service.generate_response(
+                    system_prompt=system_prompt.replace("'todaynow'", now),
+                    prompt=search_prompt,
+                    model_name=request_data.request.models_config.get("task", "gpt-4"),
+                    agent_name=task_agent_name,
+                    max_tokens=3072,
+                    use_bing_grounding=False  # No Bing grounding - using Tavily results instead
+                )
+                
+                # Aggregate the findings with Tavily metadata
+                finding_entry = {
+                    "query": query,
+                    "research_goal": research_goal,
+                    "findings": query_response,
+                    "query_number": i + 1,
+                    "sources_count": len(sources),
+                    "search_method": "tavily"
+                }
+                aggregated_findings.append(finding_entry)
+                
+                logger.info(
+                    f"Completed Tavily query {i+1}/{len(queries_data)}", 
+                    task_id=task_id, 
+                    findings_length=len(query_response),
+                    sources_found=len(sources)
+                )
+                
+            except Exception as e:
+                logger.error(f"Failed to execute Tavily query {i+1}", task_id=task_id, query=query, error=str(e))
+                # Continue with other queries even if one fails
+                finding_entry = {
+                    "query": query,
+                    "research_goal": research_goal,
+                    "findings": f"Error executing Tavily search: {str(e)}",
+                    "query_number": i + 1,
+                    "sources_count": 0,
+                    "search_method": "tavily"
+                }
+                aggregated_findings.append(finding_entry)
+
+        # Format aggregated findings into a comprehensive report (same pattern as /execute)
+        findings_text = "# Research Execution Results (Tavily Search)\n\n"
+        findings_text += f"**Total Queries Executed:** {len(aggregated_findings)}\n"
+        findings_text += f"**Search Method:** Tavily API\n\n"
+        
+        for finding in aggregated_findings:
+            findings_text += f"## Query {finding['query_number']}: {finding['query']}\n\n"
+            findings_text += f"**Research Goal:** {finding['research_goal']}\n\n"
+            findings_text += f"**Sources Found:** {finding['sources_count']}\n\n"
+            findings_text += f"**Findings:**\n{finding['findings']}\n\n"
+            findings_text += "---\n\n"
+
+        # Create report with aggregated research findings
+        report = ResearchReport(
+            task_id=task_id,
+            title=f"Research Execution (Tavily): {request_data.topic[:50]}...",
+            executive_summary=f"Comprehensive research findings from {len(aggregated_findings)} targeted queries using Tavily search API",
+            sections=[
+                ResearchSection(
+                    title="Research Findings (Tavily Search)",
+                    content=findings_text,
+                    sources=[],
+                    confidence_score=0.9,
+                    word_count=len(findings_text.split())
+                )
+            ],
+            conclusions="Research execution completed using Tavily search with current information from multiple targeted searches",
+            sources=[],
+            metadata={
+                "phase": "execute_tavily", 
+                "topic": request_data.topic, 
+                "plan": request_data.plan,
+                "queries_executed": len(aggregated_findings),
+                "search_method": "tavily",
+                "aggregated_findings": aggregated_findings  # Store structured data for final report
+            },
+            word_count=len(findings_text.split()),
+            reading_time_minutes=max(1, len(findings_text.split()) // 200)
+        )
+
+        return ResearchResponse(
+            task_id=task_id,
+            status=ResearchStatus.COMPLETED,
+            message=f"Research execution completed successfully with Tavily search - {len(aggregated_findings)} queries processed",
+            report=report
+        )
+
+    except Exception as e:
+        logger.error("Failed to execute research with Tavily", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to execute research with Tavily: {str(e)}")
+
+
 @router.post("/final-report", response_model=ResearchResponse)
 async def generate_final_report(
     request_data: FinalReportRequest,
@@ -1108,30 +1397,30 @@ async def generate_final_report(
             aggregated_data = "No detailed findings provided."
         
         report_prompt = f"""
-This is the report plan after user confirmation:
-<PLAN>
-{request_data.plan}
-</PLAN>
+        This is the report plan after user confirmation:
+        <PLAN>
+        {request_data.plan}
+        </PLAN>
 
-Here are all the learnings from previous research:
-<LEARNINGS>
-{aggregated_data}
-</LEARNINGS>
+        Here are all the learnings from previous research:
+        <LEARNINGS>
+        {aggregated_data}
+        </LEARNINGS>
 
-Please write according to the user's writing requirements, if any:
-<REQUIREMENT>
-{request_data.requirement}
-</REQUIREMENT>
+        Please write according to the user's writing requirements, if any:
+        <REQUIREMENT>
+        {request_data.requirement}
+        </REQUIREMENT>
 
-The original research topic user requested is:
-<QUERY>
-{request_data.topic}
-</QUERY>
+        The original research topic user requested is:
+        <QUERY>
+        {request_data.topic}
+        </QUERY>
 
-Write a final report based on the report plan using the learnings from research.
-Make it as detailed as possible, aim for 5 pages or more, the more the better, include ALL the learnings from research.
-**Respond only the final report content, and no additional text before or after.**
-"""
+        Write a final report based on the report plan using the learnings from research.
+        Make it as detailed as possible, aim for 5 pages or more, the more the better, include ALL the learnings from research.
+        **Respond only the final report content, and no additional text before or after.**
+        """
 
         ai_service = AIAgentService(azure_manager)
         agent_name = f"thinking-agent-finalreport-{request_data.request.models_config.get('thinking', 'gpt-4').replace('-', '') if request_data.request else 'gpt4'}"
@@ -1389,7 +1678,7 @@ Begin now.
         pptx_file_path = await export_service.create_custom_powerpoint(
             slides_data=slides_data,
             topic=request_data.topic,
-            template_name="business"  # You can make this configurable
+            template_name="sample"  # You can make this configurable
         )
 
         # Create a report with the JSON structure for download

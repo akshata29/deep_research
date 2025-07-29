@@ -15,7 +15,6 @@ import {
   Textarea,
   FormControl,
   FormLabel,
-  FormErrorMessage,
   Icon,
   useColorModeValue,
   Accordion,
@@ -26,8 +25,9 @@ import {
   Badge,
   Progress,
 } from '@chakra-ui/react';
-import { Loader2, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import { Loader2, CheckCircle, AlertCircle, Clock, Search } from 'lucide-react';
 import { useDeepResearchContext } from '@/contexts/DeepResearchContext';
+import { useLocalSettings } from '@/hooks/useApi';
 import ReactMarkdown from 'react-markdown';
 import { parsePlanToMarkdown, parseFindingsToMarkdown } from '@/utils/jsonContentParser';
 
@@ -39,25 +39,23 @@ type FormData = z.infer<typeof formSchema>;
 
 export const SearchResult: React.FC = () => {
   const cardBg = useColorModeValue('white', 'gray.800');
+  const { data: settings } = useLocalSettings();
   const { 
     reportPlan,
     searchTasks,
     isResearching,
     status,
-    currentTaskId,
-    phase,
     runSearchTasks
   } = useDeepResearchContext();
 
   const {
     register,
     handleSubmit,
-    formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(formSchema),
   });
 
-  const onSubmit = async (data: FormData) => {
+  const onSubmit = async () => {
     await runSearchTasks();
   };
 
@@ -118,6 +116,28 @@ export const SearchResult: React.FC = () => {
             </Box>
           </Box>
 
+          {/* Search Method Indicator */}
+          <Box>
+            <HStack spacing={3} align="center">
+              <Icon as={Search} color="blue.500" />
+              <Text fontSize="sm" fontWeight="medium">
+                Search Method: 
+              </Text>
+              <Badge 
+                colorScheme={settings?.searchMethod === 'tavily' ? 'purple' : 'blue'}
+                variant="subtle"
+              >
+                {settings?.searchMethod === 'tavily' ? 'Tavily Search API' : 'Bing Grounding'}
+              </Badge>
+            </HStack>
+            <Text fontSize="xs" color="gray.600" mt={1} ml={8}>
+              {settings?.searchMethod === 'tavily' 
+                ? 'Using direct web search API for comprehensive results'
+                : 'Using AI with real-time search grounding capabilities'
+              }
+            </Text>
+          </Box>
+
           {/* Progress Indicator */}
           {isResearching && (
             <Box>
@@ -133,7 +153,14 @@ export const SearchResult: React.FC = () => {
           {/* Search Tasks */}
           {searchTasks.length > 0 && (
             <Box>
-              <Heading size="sm" mb={3}>Search Tasks</Heading>
+              <HStack justify="space-between" mb={3}>
+                <Heading size="sm">Search Tasks</Heading>
+                {searchTasks.every(task => task.state === 'completed') && (
+                  <Badge colorScheme="green" variant="subtle">
+                    All tasks completed
+                  </Badge>
+                )}
+              </HStack>
               <Accordion allowToggle>
                 {searchTasks.map((task, index) => (
                   <AccordionItem key={index}>
@@ -203,6 +230,44 @@ export const SearchResult: React.FC = () => {
                     </>
                   ) : (
                     'Start Research'
+                  )}
+                </Button>
+              </VStack>
+            </form>
+          )}
+
+          {/* Resubmit Research Button - Show when tasks are completed */}
+          {searchTasks.length > 0 && searchTasks.every(task => task.state === 'completed') && (
+            <form onSubmit={handleSubmit(onSubmit)}>
+              <VStack spacing={4} align="stretch">
+                <FormControl>
+                  <FormLabel fontWeight="semibold">
+                    Research Refinement (optional)
+                  </FormLabel>
+                  <Textarea
+                    {...register('suggestion')}
+                    placeholder="Any changes or refinements for the research process..."
+                    rows={3}
+                    disabled={isResearching}
+                  />
+                </FormControl>
+
+                <Button
+                  type="submit"
+                  colorScheme="orange"
+                  size="lg"
+                  width="full"
+                  isLoading={isResearching}
+                  loadingText={status}
+                  disabled={isResearching}
+                >
+                  {isResearching ? (
+                    <>
+                      <Icon as={Loader2} className="animate-spin" mr={2} />
+                      {status}
+                    </>
+                  ) : (
+                    'Resubmit Research'
                   )}
                 </Button>
               </VStack>

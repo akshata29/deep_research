@@ -1,0 +1,239 @@
+"""
+Tavily Search Service for Deep Research application.
+
+Provides search capabilities using Tavily API to retrieve web search results
+and images for research queries.
+"""
+
+import aiohttp
+import structlog
+from typing import Dict, List, Optional, Any
+from app.core.config import get_settings
+
+logger = structlog.get_logger(__name__)
+
+
+class TavilySearchResult:
+    """Represents a single search result from Tavily API"""
+    
+    def __init__(self, title: str, url: str, content: str, raw_content: Optional[str] = None, score: float = 0.0):
+        self.title = title
+        self.url = url
+        self.content = content
+        self.raw_content = raw_content
+        self.score = score
+
+
+class ImageSource:
+    """Represents an image search result"""
+    
+    def __init__(self, url: str, description: Optional[str] = None):
+        self.url = url
+        self.description = description
+
+
+class Source:
+    """Represents a text search result source"""
+    
+    def __init__(self, title: str, content: str, url: str):
+        self.title = title
+        self.content = content
+        self.url = url
+
+
+class TavilySearchService:
+    """Service for performing web searches using Tavily API"""
+    
+    MAX_QUERY_LENGTH = 400  # Tavily API limit
+    
+    def __init__(self):
+        self.settings = get_settings()
+        self.api_key = self.settings.TAVILY_API_KEY
+        self.base_url = "https://api.tavily.com"
+    
+    def _truncate_query(self, query: str) -> str:
+        """
+        Truncate query to fit within Tavily's 400-character limit.
+        
+        Args:
+            query: Original query string
+            
+        Returns:
+            Truncated query that fits within API limits
+        """
+        if len(query) <= self.MAX_QUERY_LENGTH:
+            return query
+        
+        # Try to truncate at word boundaries when possible
+        truncated = query[:self.MAX_QUERY_LENGTH]
+        
+        # Find the last space to avoid cutting off mid-word
+        last_space = truncated.rfind(' ')
+        if last_space > self.MAX_QUERY_LENGTH * 0.8:  # Only if we don't lose too much
+            truncated = truncated[:last_space]
+        
+        logger.warning(
+            "Query truncated for Tavily API",
+            original_length=len(query),
+            truncated_length=len(truncated),
+            original_query=query[:100] + "..." if len(query) > 100 else query
+        )
+        
+        return truncated
+        
+    async def search(
+        self, 
+        query: str, 
+        max_results: int = 5,
+        search_depth: str = "advanced",
+        topic: str = "general",
+        include_images: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Perform a web search using Tavily API
+        
+        Args:
+            query: The search query
+            max_results: Maximum number of results to return
+            search_depth: Search depth ('basic' or 'advanced')
+            topic: Search topic/category
+            include_images: Whether to include image results
+            
+        Returns:
+            Dictionary containing search results with 'sources' and 'images' keys
+        """
+        if not self.api_key:
+            logger.error("Tavily API key not configured")
+            raise ValueError("Tavily API key is required but not configured")
+            
+        try:
+            # Truncate query to fit within API limits
+            truncated_query = self._truncate_query(query)
+            
+            # Prepare search parameters
+            search_params = {
+                "query": truncated_query.replace("\\", "").replace('"', ""),
+                "search_depth": search_depth,
+                "topic": topic,
+                "max_results": max_results,
+                "include_images": include_images,
+                "include_image_descriptions": True,
+                "include_answer": False,
+                "include_raw_content": True
+            }
+            
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}"
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.base_url}/search",
+                    json=search_params,
+                    headers=headers
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(
+                            "Tavily API request failed",
+                            status=response.status,
+                            error=error_text
+                        )
+                        raise Exception(f"Tavily API error ({response.status}): {error_text}")
+                    
+                    data = await response.json()
+                    
+                    # Parse results
+                    results = data.get("results", [])
+                    images = data.get("images", [])
+                    
+                    # Convert to our internal format
+                    sources = []
+                    for result in results:
+                        if result.get("content") and result.get("url"):
+                            source = Source(
+                                title=result.get("title", ""),
+                                content=result.get("raw_content") or result.get("content", ""),
+                                url=result.get("url", "")
+                            )
+                            sources.append(source)
+                    
+                    # Convert images
+                    image_sources = []
+                    for image in images:
+                        if image.get("url"):
+                            image_source = ImageSource(
+                                url=image.get("url", ""),
+                                description=image.get("description", "")
+                            )
+                            image_sources.append(image_source)
+                    
+                    logger.info(
+                        "Tavily search completed",
+                        original_query=query[:100] + "..." if len(query) > 100 else query,
+                        truncated_query=truncated_query[:100] + "..." if len(truncated_query) > 100 else truncated_query,
+                        results_count=len(sources),
+                        images_count=len(image_sources)
+                    )
+                    
+                    return {
+                        "sources": sources,
+                        "images": image_sources
+                    }
+                    
+        except Exception as e:
+            logger.error("Tavily search failed", query=query, error=str(e))
+            raise Exception(f"Tavily search failed: {str(e)}")
+    
+    def format_context_for_llm(self, sources: List[Source]) -> str:
+        """
+        Format search results as context for LLM processing
+        
+        Args:
+            sources: List of search result sources
+            
+        Returns:
+            Formatted context string with citations
+        """
+        if not sources:
+            return "No search results available."
+        
+        context_parts = []
+        for idx, source in enumerate(sources, 1):
+            context_part = f"[{idx}] {source.title}\n"
+            context_part += f"URL: {source.url}\n"
+            context_part += f"Content: {source.content}\n"
+            context_parts.append(context_part)
+        
+        return "\n\n".join(context_parts)
+    
+    async def search_and_format(
+        self, 
+        query: str, 
+        research_goal: str,
+        max_results: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Perform search and format results for LLM consumption
+        
+        Args:
+            query: The search query
+            research_goal: The research goal/objective
+            max_results: Maximum number of results
+            
+        Returns:
+            Dictionary with formatted context and metadata
+        """
+        search_results = await self.search(query, max_results=max_results)
+        
+        context = self.format_context_for_llm(search_results["sources"])
+        
+        return {
+            "query": query,
+            "research_goal": research_goal,
+            "context": context,
+            "sources": search_results["sources"],
+            "images": search_results["images"],
+            "sources_count": len(search_results["sources"])
+        }

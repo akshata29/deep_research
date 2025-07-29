@@ -4,6 +4,7 @@ export type ResearchDepth = 'quick' | 'standard' | 'deep';
 export type ExportFormat = 'markdown' | 'pdf' | 'docx' | 'pptx' | 'html' | 'json' | 'custom-pptx';
 export type TaskStatus = 'pending' | 'thinking' | 'searching' | 'generating' | 'formatting' | 'completed' | 'failed';
 export type ExecutionMode = 'agents' | 'direct' | 'auto';
+export type SearchMethod = 'bing' | 'tavily';
 
 export interface ModelConfig {
   thinking: string;
@@ -243,6 +244,7 @@ export interface UserSettings {
   defaultTaskModel?: string;
   defaultResearchDepth?: ResearchDepth;
   executionMode?: ExecutionMode;
+  searchMethod?: SearchMethod;
   defaultLanguage?: string;
   enableWebSearchByDefault?: boolean;
   enableNotifications?: boolean;

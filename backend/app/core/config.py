@@ -115,7 +115,10 @@ class Settings(BaseSettings):
         default="https://graph.microsoft.com/.default",
         description="Azure AD B2C scopes (comma-separated)"
     )
-    
+
+    TAVILY_API_KEY: str = Field(default="", description="Tavily API key")
+    TAVILY_API_BASE_URL: str = Field(default="https://api.tavily.com", description="Tavily API URL")
+
     @validator("ALLOWED_ORIGINS", pre=True)
     def parse_cors_origins(cls, v):
         """Parse CORS origins from string."""

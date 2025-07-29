@@ -32,7 +32,8 @@ export const Research: React.FC = () => {
     status, 
     isThinking, 
     isResearching, 
-    isWriting
+    isWriting,
+    finalReport
   } = useDeepResearchContext();
 
   // State for managing which accordion panels are expanded
@@ -81,6 +82,10 @@ export const Research: React.FC = () => {
     if (targetIndex < currentIndex || (phaseName === 'topic' && (phase === 'questions' || currentIndex > 0))) {
       return { status: 'completed', icon: CheckCircle, color: 'green', isEnabled: true };
     } else if (targetIndex === currentIndex || (phaseName === 'topic' && phase === 'questions')) {
+      // Special case for report phase: check if final report is completed
+      if (phaseName === 'report' && phase === 'report' && finalReport && !isWriting) {
+        return { status: 'completed', icon: CheckCircle, color: 'green', isEnabled: true };
+      }
       return { status: 'active', icon: Clock, color: 'blue', isEnabled: true };
     } else {
       return { status: 'pending', icon: Circle, color: 'gray', isEnabled: false };

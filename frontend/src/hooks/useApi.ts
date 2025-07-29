@@ -116,6 +116,13 @@ export const useExecuteResearch = () => {
   });
 };
 
+export const useExecuteResearchWithTavily = () => {
+  return useMutation({
+    mutationFn: ({ topic, plan, request }: { topic: string; plan: string; request: ResearchRequest }) =>
+      apiClient.executeResearchWithTavily(topic, plan, request),
+  });
+};
+
 export const useGenerateFinalReport = () => {
   return useMutation({
     mutationFn: ({ topic, plan, findings, requirement, request }: { 
@@ -319,6 +326,7 @@ const defaultSettings: UserSettings = {
   defaultTaskModel: 'chat4omini',
   defaultResearchDepth: 'standard',
   executionMode: 'agents',
+  searchMethod: 'bing',
   defaultLanguage: 'English',
   enableWebSearchByDefault: true,
   enableNotifications: true,

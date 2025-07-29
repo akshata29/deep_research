@@ -40,7 +40,7 @@ import {
 import { useForm } from 'react-hook-form';
 import { Save, RefreshCw, Settings, User, Shield, Zap, Brain, Wrench } from 'lucide-react';
 import { useSettings, useUpdateSettings, useSystemHealth, useModels, useLocalSettings } from '@/hooks/useApi';
-import { UserSettings, ResearchDepth } from '@/types';
+import { UserSettings, ResearchDepth, SearchMethod } from '@/types';
 
 interface SettingsFormData extends UserSettings {}
 
@@ -60,6 +60,7 @@ export const SettingsPage: React.FC = () => {
       defaultTaskModel: 'chat4omini',
       defaultResearchDepth: 'standard',
       executionMode: 'agents',
+      searchMethod: 'bing',
       defaultLanguage: 'en',
       enableWebSearchByDefault: true,
       enableNotifications: true,
@@ -196,6 +197,17 @@ export const SettingsPage: React.FC = () => {
                             {...register('enableWebSearchByDefault')}
                             colorScheme="brand"
                           />
+                        </FormControl>
+
+                        <FormControl>
+                          <FormLabel>Search Method</FormLabel>
+                          <Select {...register('searchMethod')}>
+                            <option value="bing">Bing Grounding (AI with real-time search)</option>
+                            <option value="tavily">Tavily Search (Direct web search API)</option>
+                          </Select>
+                          <FormHelperText>
+                            Choose the search method for research execution. Bing Grounding uses AI with real-time search capabilities, while Tavily provides direct web search API results.
+                          </FormHelperText>
                         </FormControl>
 
                         <FormControl>

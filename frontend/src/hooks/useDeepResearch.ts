@@ -3,6 +3,7 @@ import {
   useGenerateQuestions, 
   useCreateResearchPlan, 
   useExecuteResearch, 
+  useExecuteResearchWithTavily,
   useGenerateFinalReport,
   useLocalSettings 
 } from './useApi';
@@ -64,6 +65,7 @@ export const useDeepResearch = () => {
   const generateQuestionsMutation = useGenerateQuestions();
   const createResearchPlanMutation = useCreateResearchPlan();
   const executeResearchMutation = useExecuteResearch();
+  const executeResearchWithTavilyMutation = useExecuteResearchWithTavily();
   const generateFinalReportMutation = useGenerateFinalReport();
 
   // Get default models from settings or fallback to defaults
@@ -200,9 +202,13 @@ export const useDeepResearch = () => {
 
   // Phase 3: Execute Search Tasks (Direct API Call)
   const runSearchTasks = useCallback(async () => {
+    // Clear existing search tasks if resubmitting
+    const isResubmission = state.searchTasks.length > 0;
+    
     updateState({ 
       isResearching: true,
-      status: 'Executing search tasks...' 
+      searchTasks: [], // Clear existing tasks for fresh start
+      status: isResubmission ? 'Resubmitting search tasks...' : 'Executing search tasks...' 
     });
 
     try {
@@ -215,7 +221,15 @@ export const useDeepResearch = () => {
         language: 'en'
       };
 
-      const response = await executeResearchMutation.mutateAsync({
+      // Use the selected search method from user settings
+      const searchMethod = settings?.searchMethod || 'bing';
+      const mutation = searchMethod === 'tavily' ? executeResearchWithTavilyMutation : executeResearchMutation;
+      
+      updateState({ 
+        status: `${isResubmission ? 'Resubmitting' : 'Executing'} search tasks using ${searchMethod === 'tavily' ? 'Tavily Search' : 'Bing Grounding'}...` 
+      });
+
+      const response = await mutation.mutateAsync({
         topic: state.topic,
         plan: state.reportPlan,
         request: request
@@ -234,7 +248,8 @@ export const useDeepResearch = () => {
       updateState({ 
         searchTasks,
         phase: 'report',
-        status: 'Research tasks completed successfully',
+        finalReport: '', // Clear existing final report when resubmitting research
+        status: `Research tasks ${isResubmission ? 'resubmitted' : 'completed'} successfully using ${searchMethod === 'tavily' ? 'Tavily Search' : 'Bing Grounding'}`,
         isResearching: false
       });
       
@@ -245,7 +260,7 @@ export const useDeepResearch = () => {
         isResearching: false 
       });
     }
-  }, [state.reportPlan, state.topic, executeResearchMutation, updateState, getDefaultModels, settings?.executionMode]);
+  }, [state.reportPlan, state.topic, executeResearchMutation, executeResearchWithTavilyMutation, updateState, getDefaultModels, settings?.executionMode, settings?.searchMethod]);
 
   // Phase 4: Write Final Report (Direct API Call)
   const writeFinalReport = useCallback(async (requirement?: string) => {

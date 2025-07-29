@@ -56,7 +56,7 @@ class AvailableModel(BaseModel):
 
 class ResearchRequest(BaseModel):
     """Research request from frontend."""
-    prompt: str = Field(..., min_length=10, max_length=20000, description="Research query or topic")
+    prompt: str = Field(..., min_length=10, description="Research query or topic")
     models_config: Dict[str, str] = Field(
         default_factory=lambda: {"thinking": "gpt-4", "task": "gpt-35-turbo"},
         description="Model configuration for different tasks"

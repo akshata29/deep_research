@@ -119,6 +119,15 @@ class ApiClient {
     return response.data;
   }
 
+  async executeResearchWithTavily(topic: string, plan: string, request: ResearchRequest): Promise<ResearchResponse> {
+    const response = await this.client.post<ResearchResponse>('/research/execute-tavily', {
+      topic,
+      plan,
+      request
+    });
+    return response.data;
+  }
+
   async generateFinalReport(topic: string, plan: string, findings: string, requirement: string = '', request?: ResearchRequest): Promise<ResearchResponse> {
     const response = await this.client.post<ResearchResponse>('/research/final-report', {
       topic,
