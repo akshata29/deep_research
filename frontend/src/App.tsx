@@ -5,6 +5,7 @@ import { theme } from './theme';
 import { Layout } from './components/Layout';
 import { HomePage } from './pages/HomePage';
 import { ResearchPage } from './pages/ResearchPage';
+import { OrchestrationPage } from './pages/OrchestrationPage';
 import { ExportsPage } from './pages/ExportsPage';
 import { SessionsPage } from './pages/SessionsPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -38,6 +39,8 @@ function App() {
                   <Route path="/" element={<HomePage />} />
                   <Route path="/research" element={<ResearchPage />} />
                   <Route path="/research/:taskId" element={<ResearchPage />} />
+                  <Route path="/orchestration" element={<OrchestrationPage />} />
+                  <Route path="/orchestration/:sessionId" element={<OrchestrationPage />} />
                   <Route path="/exports" element={<ExportsPage />} />
                   <Route path="/sessions" element={<SessionsPage />} />
                   <Route path="/settings" element={<SettingsPage />} />

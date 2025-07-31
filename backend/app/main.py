@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import research, health, export, convert, sessions
+from app.api import research, health, export, convert, sessions, orchestration
 from app.api import settings as user_settings
 from app.core.config import get_settings
 from app.core.azure_config import AzureServiceManager
@@ -128,6 +128,7 @@ async def general_exception_handler(request, exc):
 # Include API routers
 app.include_router(health.router, prefix="/api/v1/health", tags=["Health"])
 app.include_router(research.router, prefix="/api/v1/research", tags=["Research"])
+app.include_router(orchestration.router, prefix="/api/v1", tags=["Orchestration"])
 app.include_router(export.router, prefix="/api/v1/export", tags=["Export"])
 app.include_router(convert.router, prefix="/api/v1/export", tags=["Convert"])
 app.include_router(sessions.router, prefix="/api/v1/sessions", tags=["Sessions"])

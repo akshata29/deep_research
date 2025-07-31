@@ -1,0 +1,79 @@
+# Copy this template to project_config.yaml and customize for your environment
+
+system:
+  company: "Deep Research Corp"
+  research_domain: "AI & Technology Research"
+  language: "en"
+  timezone: "UTC"
+
+data_sources:
+  document_types:
+    - name: "research_docs"
+      index_name: "research-documents-index"
+      description: "Research documents and papers"
+      enabled: false  # Set to true when Azure Search is configured
+    - name: "technical_specs"
+      index_name: "technical-specifications-index"
+      description: "Technical specifications and documentation"
+      enabled: false  # Set to true when Azure Search is configured
+
+  web_search:
+    enabled: true
+    max_results: 10
+    quality_threshold: 0.7
+    fallback_enabled: true
+
+agents:
+  lead_researcher:
+    model: "chat4"
+    max_iterations: 5
+    confidence_threshold: 0.8
+
+  researchers:
+    count: 3
+    model: "chat4omini"
+    max_iterations: 3
+    confidence_threshold: 0.7
+
+  credibility_critic:
+    model: "chat4"
+    max_iterations: 2
+    confidence_threshold: 0.9
+
+  reflection_critic:
+    model: "chat4"
+    max_iterations: 2
+    confidence_threshold: 0.9
+
+  summarizer:
+    model: "chat4"
+    max_iterations: 3
+    confidence_threshold: 0.8
+
+  report_writer:
+    model: "chato1"
+    max_iterations: 3
+    confidence_threshold: 0.9
+
+  citation_manager:
+    model: "chat4omini"
+    max_iterations: 2
+    confidence_threshold: 0.8
+
+  translator:
+    model: "chat4omini"
+    max_iterations: 2
+    confidence_threshold: 0.8
+
+quality:
+  min_sources: 3
+  max_research_iterations: 5
+  confidence_threshold: 0.8
+  citation_required: true
+  fact_checking_enabled: true
+
+performance:
+  parallel_research_enabled: true
+  max_concurrent_agents: 5
+  timeout_seconds: 300
+  memory_retention_days: 30

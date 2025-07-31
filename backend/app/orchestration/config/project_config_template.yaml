@@ -1,0 +1,102 @@
+# Project Configuration Template for Deep Research Orchestration
+
+system:
+  company: "Your Company Name"
+  research_domain: "Enterprise Research & Development"
+  language: "en"
+  timezone: "UTC"
+
+data_sources:
+  # Document search configuration
+  document_types:
+    - name: "research_docs"
+      index_name: "research-documents-index"
+      description: "Research documents and papers"
+      enabled: true
+    - name: "technical_specs"
+      index_name: "technical-specifications-index" 
+      description: "Technical specifications and documentation"
+      enabled: true
+    - name: "reports"
+      index_name: "reports-index"
+      description: "Internal reports and analysis"
+      enabled: true
+  
+  # Web search configuration
+  web_search:
+    enabled: true
+    max_results: 10
+    quality_threshold: 0.7
+    fallback_enabled: true
+
+agents:
+  # Lead researcher configuration
+  lead_researcher:
+    model: "gpt-4"
+    max_iterations: 5
+    confidence_threshold: 0.8
+    specialization: "Research coordination and task decomposition"
+  
+  # Parallel researchers
+  researchers:
+    count: 3
+    model: "gpt-4-mini"
+    max_iterations: 3
+    confidence_threshold: 0.7
+    specializations:
+      - "Technical analysis and documentation"
+      - "Market research and competitive analysis"
+      - "Risk assessment and compliance"
+  
+  # Quality and validation agents
+  credibility_critic:
+    model: "gpt-4"
+    max_iterations: 2
+    confidence_threshold: 0.9
+    specialization: "Source quality assessment and reliability validation"
+  
+  reflection_critic:
+    model: "gpt-4"
+    max_iterations: 2
+    confidence_threshold: 0.9
+    specialization: "Quality validation and improvement recommendations"
+  
+  # Report generation agents
+  summarizer:
+    model: "gpt-4"
+    max_iterations: 3
+    confidence_threshold: 0.8
+    specialization: "Knowledge synthesis and summarization"
+  
+  report_writer:
+    model: "o3"
+    max_iterations: 3
+    confidence_threshold: 0.9
+    specialization: "Professional report writing with citations"
+  
+  citation_manager:
+    model: "gpt-4-mini"
+    max_iterations: 2
+    confidence_threshold: 0.8
+    specialization: "Reference management and citation formatting"
+  
+  translator:
+    model: "gpt-4-mini"
+    max_iterations: 2
+    confidence_threshold: 0.8
+    specialization: "Professional terminology translation"
+
+# Quality control settings
+quality:
+  min_sources: 3
+  max_research_iterations: 5
+  confidence_threshold: 0.8
+  citation_required: true
+  fact_checking_enabled: true
+
+# Performance settings
+performance:
+  parallel_research_enabled: true
+  max_concurrent_agents: 5
+  timeout_seconds: 300
+  memory_retention_days: 30

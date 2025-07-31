@@ -362,6 +362,7 @@ export interface ResearchSession {
   
   // Research pipeline state
   current_phase: SessionPhase;
+  phase: string;
   topic: string;
   questions: string;
   feedback: string;
@@ -383,6 +384,7 @@ export interface ResearchSession {
   status: string;
   tags: string[];
   notes: string;
+  session_type: string; // 'research' or 'orchestration'
 }
 
 export interface SessionListResponse {
@@ -420,4 +422,93 @@ export interface SessionStorageStats {
   total_size_bytes: number;
   unique_tags: string[];
   storage_location: string;
+}
+
+// Orchestration Types
+export interface OrchestrationRequest {
+  query: string;
+  session_id?: string;
+  config_overrides?: Record<string, any>;
+}
+
+export interface OrchestrationResponse {
+  session_id: string;
+  status: 'started' | 'in_progress' | 'completed' | 'failed';
+  result?: string;
+  message?: string;
+  agents_used?: string[];
+  execution_time?: number;
+  error?: string;
+}
+
+export interface OrchestrationSession {
+  session_id: string;
+  status: 'active' | 'completed' | 'failed';
+  query: string;
+  start_time: string;
+  end_time?: string;
+  result?: string;
+  agents_used: string[];
+  memory_collections: string[];
+  error?: string;
+}
+
+export interface OrchestrationHealth {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  active_sessions_count: number;
+  configuration: {
+    azure_openai_configured: boolean;
+    azure_search_configured: boolean;
+    web_search_configured: boolean;
+    embedding_configured: boolean;
+  };
+  agents_available: string[];
+  memory_collections_count: number;
+  last_check: string;
+}
+
+// Orchestration Progress Types
+export interface AgentExecution {
+  agent_name: string;
+  status: 'running' | 'completed' | 'failed';
+  input: string;
+  output: string;
+  metadata?: Record<string, any>;
+  execution_time_seconds?: number;
+  timestamp: string;
+}
+
+export interface OrchestrationProgress {
+  session_id: string;
+  status: 'initialized' | 'in_progress' | 'completed' | 'failed';
+  progress_percentage: number;
+  total_agents: number;
+  completed_agents: number;
+  failed_agents: number;
+  agent_executions: AgentExecution[];
+  final_result?: string;
+  created_at: string;
+  updated_at: string;
+  metadata?: Record<string, any>;
+}
+
+export interface ProgressUpdate {
+  type: 'research_started' | 'agent_started' | 'agent_completed' | 'agent_failed' | 'research_completed';
+  agent_name?: string;
+  message: string;
+  progress: number;
+  output_preview?: string;
+  error?: string;
+}
+
+export interface OrchestrationSessionDetails {
+  session_id: string;
+  project_id: string;
+  query: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  agent_executions: AgentExecution[];
+  final_result?: string;
+  metadata?: Record<string, any>;
 }

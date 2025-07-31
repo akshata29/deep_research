@@ -8,7 +8,7 @@ for complete research pipeline state tracking and replay.
 import structlog
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from app.core.azure_config import AzureServiceManager
 from app.api.research import get_azure_manager
@@ -17,12 +17,14 @@ from app.models.schemas import (
     SessionUpdateRequest, SessionRestoreRequest, SessionPhase
 )
 from app.services.session_manager import SessionManager
+from app.orchestration.session_manager import OrchestrationSessionManager
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
-# Initialize session manager
+# Initialize session managers
 session_manager = SessionManager()
+orchestration_session_manager = OrchestrationSessionManager()
 
 
 @router.post("/", response_model=ResearchSession)
@@ -59,10 +61,12 @@ async def list_sessions(
     status_filter: Optional[str] = Query(None, description="Filter by session status"),
     tag_filter: Optional[str] = Query(None, description="Filter by tag"),
     search_query: Optional[str] = Query(None, description="Search in title/description"),
+    include_orchestration: bool = Query(True, description="Include orchestration sessions"),
     azure_manager: AzureServiceManager = Depends(get_azure_manager)
 ):
     """
     List research sessions with filtering and pagination.
+    Includes both regular research sessions and orchestration sessions.
     
     Args:
         page: Page number (1-based)
@@ -70,11 +74,13 @@ async def list_sessions(
         status_filter: Filter by session status
         tag_filter: Filter by tag
         search_query: Search query for title/description
+        include_orchestration: Whether to include orchestration sessions
         
     Returns:
         Paginated list of research sessions
     """
     try:
+        # Get regular research sessions
         result = session_manager.list_sessions(
             page=page,
             page_size=page_size,
@@ -82,6 +88,45 @@ async def list_sessions(
             tag_filter=tag_filter,
             search_query=search_query
         )
+        
+        # If orchestration sessions should be included, add them
+        if include_orchestration:
+            try:
+                # Get orchestration sessions metadata
+                orchestration_metadata = orchestration_session_manager._load_metadata()
+                
+                # Convert orchestration sessions to ResearchSession format
+                orchestration_sessions = []
+                for session_id, session_meta in orchestration_metadata.items():
+                    # Create a compatible session object
+                    orchestration_session = ResearchSession(
+                        session_id=session_id,
+                        title=f"Multi-Agent Research: {session_meta.get('query', 'Unknown Query')[:50]}...",
+                        description=session_meta.get('query', 'Orchestration research session'),
+                        topic="Multi-Agent Orchestration",
+                        status=session_meta.get('status', 'unknown'),
+                        phase="completed" if session_meta.get('status') == 'completed' else "in_progress",
+                        created_at=session_meta.get('created_at', datetime.utcnow().isoformat()),
+                        updated_at=session_meta.get('updated_at', datetime.utcnow().isoformat()),
+                        tags=["orchestration", "multi-agent"],
+                        session_type="orchestration",  # Mark as orchestration session
+                        notes=f"Project: {session_meta.get('project_id', 'Unknown')}"
+                    )
+                    orchestration_sessions.append(orchestration_session)
+                
+                # Add orchestration sessions to results
+                result.sessions.extend(orchestration_sessions)
+                result.total_count += len(orchestration_sessions)
+                
+                # Sort by updated_at (most recent first)
+                result.sessions.sort(key=lambda x: x.updated_at, reverse=True)
+                
+                logger.info("Added orchestration sessions", 
+                           orchestration_count=len(orchestration_sessions))
+                
+            except Exception as orch_error:
+                logger.warning("Failed to load orchestration sessions", error=str(orch_error))
+                # Continue without orchestration sessions
         
         logger.info("Sessions listed successfully", 
                    total_count=result.total_count, 
@@ -389,4 +434,108 @@ async def cleanup_old_sessions(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to cleanup sessions: {str(e)}"
+        )
+
+
+@router.get("/orchestration/{session_id}/details")
+async def get_orchestration_session_details(
+    session_id: str,
+    azure_manager: AzureServiceManager = Depends(get_azure_manager)
+):
+    """
+    Get detailed orchestration session information including agent executions.
+    
+    Args:
+        session_id: Orchestration session identifier
+        
+    Returns:
+        Detailed orchestration session data with agent execution history
+    """
+    try:
+        # Get session details from orchestration session manager
+        session_details = orchestration_session_manager.get_session(session_id)
+        
+        if not session_details:
+            raise HTTPException(
+                status_code=404,
+                detail="Orchestration session not found"
+            )
+        
+        logger.info("Orchestration session details retrieved", 
+                   session_id=session_id[:8],
+                   agent_executions=len(session_details.get('agent_executions', [])))
+        
+        return {
+            "success": True,
+            "session_details": session_details,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to get orchestration session details", 
+                    session_id=session_id, error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get orchestration session details: {str(e)}"
+        )
+
+
+@router.post("/orchestration/{session_id}/restore")
+async def restore_orchestration_session(
+    session_id: str,
+    azure_manager: AzureServiceManager = Depends(get_azure_manager)
+):
+    """
+    Restore an orchestration session for viewing and analysis.
+    
+    Args:
+        session_id: Orchestration session identifier
+        
+    Returns:
+        Orchestration session restoration data
+    """
+    try:
+        # Get session details
+        session_details = orchestration_session_manager.get_session(session_id)
+        
+        if not session_details:
+            raise HTTPException(
+                status_code=404,
+                detail="Orchestration session not found"
+            )
+        
+        # Prepare restoration data in a format suitable for the UI
+        restoration_data = {
+            "sessionId": session_id,
+            "sessionType": "orchestration",
+            "query": session_details.get("query", ""),
+            "status": session_details.get("status", "unknown"),
+            "finalResult": session_details.get("final_result", ""),
+            "agentExecutions": session_details.get("agent_executions", []),
+            "metadata": session_details.get("metadata", {}),
+            "createdAt": session_details.get("created_at", ""),
+            "updatedAt": session_details.get("updated_at", "")
+        }
+        
+        logger.info("Orchestration session restored successfully", 
+                   session_id=session_id[:8],
+                   agent_count=len(session_details.get('agent_executions', [])))
+        
+        return {
+            "success": True,
+            "message": f"Orchestration session {session_id[:8]} restored successfully",
+            "session_id": session_id,
+            "restoration_data": restoration_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to restore orchestration session", 
+                    session_id=session_id, error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to restore orchestration session: {str(e)}"
         )

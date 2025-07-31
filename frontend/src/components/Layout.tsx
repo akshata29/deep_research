@@ -36,6 +36,7 @@ import {
   BarChart3,
   User,
   LogOut,
+  Users,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -78,6 +79,7 @@ const Navigation = ({ onClose }: { onClose?: () => void }) => {
   const navItems = [
     { to: '/', icon: <Home size={16} />, label: 'Home' },
     { to: '/research', icon: <Search size={16} />, label: 'Research' },
+    { to: '/orchestration', icon: <Users size={16} />, label: 'Orchestration' },
     { to: '/exports', icon: <FileText size={16} />, label: 'Exports' },
     { to: '/sessions', icon: <BarChart3 size={16} />, label: 'Sessions' },
     { to: '/settings', icon: <Settings size={16} />, label: 'Settings' },

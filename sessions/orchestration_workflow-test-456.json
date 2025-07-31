@@ -1,0 +1,121 @@
+{
+  "session_id": "workflow-test-456",
+  "project_id": "test-project",
+  "query": "Comprehensive AI research with multiple specialized agents",
+  "status": "completed",
+  "created_at": "2025-07-30T21:41:50.266177",
+  "updated_at": "2025-07-30T21:41:50.781931",
+  "agent_executions": [
+    {
+      "agent_name": "LeadResearcher",
+      "status": "completed",
+      "input": "Create research plan",
+      "output": "Research plan: 1. Literature review 2. Technology analysis 3. Market trends",
+      "metadata": {
+        "agent_type": "leadresearch",
+        "step": 1,
+        "role": "planning"
+      },
+      "execution_time_seconds": 1.2,
+      "timestamp": "2025-07-30T21:41:50.335880"
+    },
+    {
+      "agent_name": "Researcher1",
+      "status": "completed",
+      "input": "Research AI foundations",
+      "output": "AI foundations: Machine learning, deep learning, neural networks...",
+      "metadata": {
+        "agent_type": "research1",
+        "step": 2,
+        "role": "research"
+      },
+      "execution_time_seconds": 2.1,
+      "timestamp": "2025-07-30T21:41:50.390149"
+    },
+    {
+      "agent_name": "Researcher2",
+      "status": "completed",
+      "input": "Research current trends",
+      "output": "Current trends: LLMs, multimodal AI, autonomous systems...",
+      "metadata": {
+        "agent_type": "research2",
+        "step": 3,
+        "role": "research"
+      },
+      "execution_time_seconds": 1.8,
+      "timestamp": "2025-07-30T21:41:50.438014"
+    },
+    {
+      "agent_name": "Researcher3",
+      "status": "completed",
+      "input": "Research applications",
+      "output": "Applications: Healthcare, finance, education, manufacturing...",
+      "metadata": {
+        "agent_type": "research3",
+        "step": 4,
+        "role": "research"
+      },
+      "execution_time_seconds": 2.3,
+      "timestamp": "2025-07-30T21:41:50.484607"
+    },
+    {
+      "agent_name": "CredibilityCritic",
+      "status": "completed",
+      "input": "Validate sources",
+      "output": "Source validation: All sources verified for credibility",
+      "metadata": {
+        "agent_type": "credibilitycritic",
+        "step": 5,
+        "role": "analysis"
+      },
+      "execution_time_seconds": 0.8,
+      "timestamp": "2025-07-30T21:41:50.544990"
+    },
+    {
+      "agent_name": "Summarizer",
+      "status": "completed",
+      "input": "Synthesize findings",
+      "output": "Synthesis: AI technology shows rapid advancement across domains...",
+      "metadata": {
+        "agent_type": "summarizer",
+        "step": 6,
+        "role": "analysis"
+      },
+      "execution_time_seconds": 1.5,
+      "timestamp": "2025-07-30T21:41:50.606374"
+    },
+    {
+      "agent_name": "ReportWriter",
+      "status": "completed",
+      "input": "Generate final report",
+      "output": "# AI Research Report\n\n## Executive Summary\nAI continues to evolve...",
+      "metadata": {
+        "agent_type": "reportwriter",
+        "step": 7,
+        "role": "analysis"
+      },
+      "execution_time_seconds": 2.8,
+      "timestamp": "2025-07-30T21:41:50.656881"
+    },
+    {
+      "agent_name": "CitationAgent",
+      "status": "completed",
+      "input": "Add citations",
+      "output": "Citations added: [1] Nature AI (2024) [2] Science Robotics...",
+      "metadata": {
+        "agent_type": "citationagent",
+        "step": 8,
+        "role": "analysis"
+      },
+      "execution_time_seconds": 0.9,
+      "timestamp": "2025-07-30T21:41:50.720116"
+    }
+  ],
+  "final_result": "# Comprehensive AI Research Report\n\n## Executive Summary\nThis research provides a comprehensive analysis of current AI technologies, trends, and applications across multiple domains.\n\n## Key Findings\n- AI adoption accelerating across industries\n- Large Language Models driving new capabilities\n- Multimodal AI enabling richer interactions\n- Autonomous systems reaching practical deployment\n\n## Recommendations\n1. Invest in AI infrastructure\n2. Develop AI governance frameworks\n3. Focus on ethical AI development\n4. Build AI-ready workforce\n\n## Conclusion\nAI represents a transformative technology with significant opportunities and challenges ahead.\n",
+  "metadata": {
+    "total_agents": 8,
+    "completed_agents": 8,
+    "failed_agents": 0,
+    "execution_time_seconds": 13.4
+  }
+}

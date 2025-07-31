@@ -107,6 +107,14 @@ export const HomePage: React.FC = () => {
             </Button>
             <Button
               size="lg"
+              colorScheme="purple"
+              onClick={() => navigate('/orchestration')}
+              leftIcon={<Icon as={Users} />}
+            >
+              Research Orchestration
+            </Button>
+            <Button
+              size="lg"
               variant="outline"
               onClick={() => navigate('/exports')}
               leftIcon={<Icon as={FileText} />}

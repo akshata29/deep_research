@@ -16,7 +16,13 @@ import {
   SessionCreateRequest,
   SessionUpdateRequest,
   SessionRestoreRequest,
-  SessionStorageStats
+  SessionStorageStats,
+  OrchestrationRequest,
+  OrchestrationResponse,
+  OrchestrationSession,
+  OrchestrationHealth,
+  OrchestrationProgress,
+  OrchestrationSessionDetails
 } from '@/types';
 
 export class ApiClientError extends Error {
@@ -347,6 +353,48 @@ class ApiClient {
 
   async cleanupOldSessions(daysOld: number = 90): Promise<{ success: boolean; archived_sessions: number; days_old: number; message: string }> {
     const response = await this.client.post<{ success: boolean; archived_sessions: number; days_old: number; message: string }>('/sessions/cleanup', { days_old: daysOld });
+    return response.data;
+  }
+
+  // === Orchestration Methods ===
+  async startOrchestration(request: OrchestrationRequest): Promise<OrchestrationResponse> {
+    const response = await this.client.post<OrchestrationResponse>('/orchestration/research', request);
+    return response.data;
+  }
+
+  async getOrchestrationSession(sessionId: string): Promise<OrchestrationSession> {
+    const response = await this.client.get<OrchestrationSession>(`/orchestration/sessions/${sessionId}/summary`);
+    return response.data;
+  }
+
+  async listOrchestrationSessions(): Promise<OrchestrationSession[]> {
+    const response = await this.client.get<OrchestrationSession[]>('/orchestration/sessions');
+    return response.data;
+  }
+
+  async deleteOrchestrationSession(sessionId: string): Promise<{ success: boolean; message: string }> {
+    const response = await this.client.delete<{ success: boolean; message: string }>(`/orchestration/sessions/${sessionId}`);
+    return response.data;
+  }
+
+  async getOrchestrationHealth(): Promise<OrchestrationHealth> {
+    const response = await this.client.get<OrchestrationHealth>('/orchestration/health');
+    return response.data;
+  }
+
+  // New orchestration progress and session management
+  async getOrchestrationProgress(sessionId: string): Promise<OrchestrationProgress> {
+    const response = await this.client.get<OrchestrationProgress>(`/orchestration/sessions/${sessionId}/progress`);
+    return response.data;
+  }
+
+  async getOrchestrationSessionDetails(sessionId: string): Promise<{ success: boolean; session_details: OrchestrationSessionDetails }> {
+    const response = await this.client.get<{ success: boolean; session_details: OrchestrationSessionDetails }>(`/sessions/orchestration/${sessionId}/details`);
+    return response.data;
+  }
+
+  async restoreOrchestrationSession(sessionId: string): Promise<{ success: boolean; restoration_data: any }> {
+    const response = await this.client.post<{ success: boolean; restoration_data: any }>(`/sessions/orchestration/${sessionId}/restore`);
     return response.data;
   }
 }

@@ -64,6 +64,7 @@ import {
 } from '@/hooks/useApi';
 import { ResearchSession, SessionCreateRequest, SessionUpdateRequest } from '@/types';
 import { useNavigate } from 'react-router-dom';
+import { apiClient } from '@/services/api';
 
 export const SessionsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -218,25 +219,47 @@ export const SessionsPage: React.FC = () => {
   // Handle restore session
   const handleRestoreSession = async (session: ResearchSession) => {
     try {
-      const result = await restoreSessionMutation.mutateAsync({
-        sessionId: session.session_id,
-        request: { session_id: session.session_id },
-      });
-      
-      toast({
-        title: 'Session Restored',
-        description: `Session restored to ${result.restoration_data.phase} phase`,
-        status: 'success',
-        duration: 3000,
-      });
-      
-      // Navigate to research page with restored state and session ID
-      navigate('/research', { 
-        state: { 
-          restoredSession: result.restoration_data,
-          sessionId: session.session_id
-        } 
-      });
+      // Check if this is an orchestration session
+      if (session.session_type === 'orchestration') {
+        // Restore orchestration session
+        const result = await apiClient.restoreOrchestrationSession(session.session_id);
+        
+        toast({
+          title: 'Orchestration Session Restored',
+          description: `Session ${session.session_id.slice(0, 8)} restored successfully`,
+          status: 'success',
+          duration: 3000,
+        });
+        
+        // Navigate to orchestration page with restored data
+        navigate(`/orchestration/${session.session_id}`, { 
+          state: { 
+            restoredSession: result.restoration_data,
+            sessionId: session.session_id
+          } 
+        });
+      } else {
+        // Restore regular research session
+        const result = await restoreSessionMutation.mutateAsync({
+          sessionId: session.session_id,
+          request: { session_id: session.session_id },
+        });
+        
+        toast({
+          title: 'Session Restored',
+          description: `Session restored to ${result.restoration_data.phase} phase`,
+          status: 'success',
+          duration: 3000,
+        });
+        
+        // Navigate to research page with restored state and session ID
+        navigate('/research', { 
+          state: { 
+            restoredSession: result.restoration_data,
+            sessionId: session.session_id
+          } 
+        });
+      }
     } catch (error) {
       toast({
         title: 'Error',
@@ -459,7 +482,14 @@ export const SessionsPage: React.FC = () => {
                   <Tr key={session.session_id}>
                     <Td>
                       <VStack align="start" spacing={1}>
-                        <Text fontWeight="medium">{session.title}</Text>
+                        <HStack spacing={2}>
+                          <Text fontWeight="medium">{session.title}</Text>
+                          {session.session_type === 'orchestration' && (
+                            <Badge colorScheme="blue" variant="solid" size="sm">
+                              Multi-Agent
+                            </Badge>
+                          )}
+                        </HStack>
                         {session.description && (
                           <Text fontSize="sm" color="gray.600" noOfLines={1}>
                             {session.description}
@@ -468,7 +498,7 @@ export const SessionsPage: React.FC = () => {
                         {session.tags.length > 0 && (
                           <HStack spacing={1}>
                             {session.tags.slice(0, 3).map((tag) => (
-                              <Tag key={tag} size="sm" colorScheme="blue">
+                              <Tag key={tag} size="sm" colorScheme={session.session_type === 'orchestration' ? 'blue' : 'gray'}>
                                 <TagLabel>{tag}</TagLabel>
                               </Tag>
                             ))}

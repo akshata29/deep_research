@@ -312,6 +312,7 @@ class ResearchSession(BaseModel):
     
     # Research pipeline state
     current_phase: SessionPhase = Field(default=SessionPhase.TOPIC, description="Current research phase")
+    phase: str = Field(default="", description="Current phase for compatibility")
     topic: str = Field(default="", description="Research topic")
     questions: str = Field(default="", description="Generated questions")
     feedback: str = Field(default="", description="User feedback on questions")
@@ -333,6 +334,7 @@ class ResearchSession(BaseModel):
     status: str = Field(default="active", description="Session status: active, completed, archived")
     tags: List[str] = Field(default_factory=list, description="Session tags for organization")
     notes: str = Field(default="", description="User notes about the session")
+    session_type: str = Field(default="research", description="Session type: research, orchestration")
 
 
 class SessionListResponse(BaseModel):
@@ -364,3 +366,94 @@ class SessionRestoreRequest(BaseModel):
     """Request to restore a session to the current research context."""
     session_id: str = Field(..., description="Session ID to restore")
     continue_from_phase: Optional[SessionPhase] = Field(default=None, description="Phase to continue from")
+
+
+# === Orchestration Models ===
+
+class OrchestrationStatus(str, Enum):
+    """Orchestration task status enumeration."""
+    PENDING = "pending"
+    INITIALIZING = "initializing"
+    RESEARCHING = "researching"
+    ANALYZING = "analyzing"
+    COLLABORATING = "collaborating"
+    SYNTHESIZING = "synthesizing"
+    WRITING = "writing"
+    REVIEWING = "reviewing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class ResearchTaskCreate(BaseModel):
+    """Request to create a new research task using multi-agent orchestration."""
+    query: str = Field(..., description="Research query or question", min_length=10, max_length=2000)
+    project_id: Optional[str] = Field(default=None, description="Project identifier for context grouping")
+    use_internal_search: bool = Field(default=True, description="Whether to search internal documents")
+    use_web_search: bool = Field(default=True, description="Whether to search external web sources")
+    max_iterations: int = Field(default=5, description="Maximum number of research iterations", ge=1, le=10)
+    collaboration_mode: str = Field(default="comprehensive", description="Agent collaboration mode")
+
+
+class ResearchTaskResponse(BaseModel):
+    """Response for orchestration research task creation."""
+    session_id: str = Field(..., description="Unique session identifier")
+    status: OrchestrationStatus = Field(..., description="Current task status")
+    query: str = Field(..., description="Research query")
+    created_at: datetime = Field(..., description="Task creation timestamp")
+    estimated_completion: Optional[datetime] = Field(default=None, description="Estimated completion time")
+    message: str = Field(..., description="Status message")
+
+
+class OrchestrationProgress(BaseModel):
+    """Progress update for orchestration research."""
+    session_id: str = Field(..., description="Session identifier")
+    status: OrchestrationStatus = Field(..., description="Current status")
+    current_agent: Optional[str] = Field(default=None, description="Currently active agent")
+    progress_percentage: float = Field(..., description="Progress percentage (0-100)", ge=0, le=100)
+    current_step: str = Field(..., description="Current processing step")
+    agents_completed: List[str] = Field(default_factory=list, description="List of completed agents")
+    findings_count: int = Field(default=0, description="Number of findings discovered")
+    sources_count: int = Field(default=0, description="Number of sources analyzed")
+    last_update: datetime = Field(..., description="Last update timestamp")
+    estimated_remaining: Optional[str] = Field(default=None, description="Estimated time remaining")
+
+
+class OrchestrationResult(BaseModel):
+    """Final result from orchestration research."""
+    session_id: str = Field(..., description="Session identifier")
+    query: str = Field(..., description="Original research query")
+    status: OrchestrationStatus = Field(..., description="Final status")
+    summary: str = Field(..., description="Research summary")
+    key_findings: List[str] = Field(default_factory=list, description="Key research findings")
+    recommendations: List[str] = Field(default_factory=list, description="Research recommendations")
+    sources: List[Dict[str, Any]] = Field(default_factory=list, description="Source documents and references")
+    agent_contributions: Dict[str, Any] = Field(default_factory=dict, description="Individual agent contributions")
+    research_quality_score: float = Field(..., description="Quality assessment score (0-1)", ge=0, le=1)
+    created_at: datetime = Field(..., description="Research start time")
+    completed_at: Optional[datetime] = Field(default=None, description="Research completion time")
+    total_duration: Optional[str] = Field(default=None, description="Total research duration")
+    export_formats: List[str] = Field(default_factory=list, description="Available export formats")
+
+
+class OrchestrationSessionSummary(BaseModel):
+    """Summary of orchestration session."""
+    session_id: str = Field(..., description="Session identifier")
+    query: str = Field(..., description="Research query")
+    status: OrchestrationStatus = Field(..., description="Current status")
+    progress_percentage: float = Field(..., description="Progress percentage")
+    agents_active: int = Field(..., description="Number of active agents")
+    findings_count: int = Field(..., description="Total findings discovered")
+    sources_count: int = Field(..., description="Total sources analyzed")
+    created_at: datetime = Field(..., description="Session creation time")
+    last_activity: datetime = Field(..., description="Last activity timestamp")
+
+
+class OrchestrationHealthResponse(BaseModel):
+    """Health status of orchestration system."""
+    status: str = Field(..., description="Overall system status")
+    active_sessions_count: int = Field(..., description="Number of active research sessions")
+    total_agents_available: int = Field(..., description="Total available agents")
+    configuration: Dict[str, bool] = Field(..., description="Configuration status")
+    last_health_check: datetime = Field(..., description="Last health check timestamp")
+    memory_usage: Optional[Dict[str, Any]] = Field(default=None, description="Memory usage statistics")
+    performance_metrics: Optional[Dict[str, Any]] = Field(default=None, description="Performance metrics")

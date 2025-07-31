@@ -1,0 +1,56 @@
+{
+  "f63d7e56-7a7c-403b-b299-d3150afddd42": {
+    "session_id": "f63d7e56-7a7c-403b-b299-d3150afddd42",
+    "project_id": "project_f63d7e56",
+    "query": "Perform deep Company Analysis of Microsoft including Comprehensive Evaluation of Business Overview, ...",
+    "status": "completed",
+    "created_at": "2025-07-30T21:42:33.551791",
+    "updated_at": "2025-07-30T21:45:33.881486",
+    "file_path": "sessions\\orchestration_f63d7e56-7a7c-403b-b299-d3150afddd42.json"
+  },
+  "68ad1276-3fb5-4bcf-92ef-1863531a4b8d": {
+    "session_id": "68ad1276-3fb5-4bcf-92ef-1863531a4b8d",
+    "project_id": "project_68ad1276",
+    "query": "Deep Company Analysis of Google: Comprehensive Evaluation of Business Overview, Financial Performanc...",
+    "status": "completed",
+    "created_at": "2025-07-31T03:19:08.752122",
+    "updated_at": "2025-07-31T03:20:37.433869",
+    "file_path": "sessions\\orchestration_68ad1276-3fb5-4bcf-92ef-1863531a4b8d.json"
+  },
+  "3484d1da-9a3d-456a-9d71-aeb86cb93b54": {
+    "session_id": "3484d1da-9a3d-456a-9d71-aeb86cb93b54",
+    "project_id": "project_3484d1da",
+    "query": "Perform the research on the advancements in AI and Large Language Models at Microsoft",
+    "status": "completed",
+    "created_at": "2025-07-31T03:32:43.721123",
+    "updated_at": "2025-07-31T03:34:18.935307",
+    "file_path": "sessions\\orchestration_3484d1da-9a3d-456a-9d71-aeb86cb93b54.json"
+  },
+  "90c48bb5-9128-48b6-b2e9-711c3d33c31b": {
+    "session_id": "90c48bb5-9128-48b6-b2e9-711c3d33c31b",
+    "project_id": "project_90c48bb5",
+    "query": "Perform the research on the advancements in LLM Models at OpenAI",
+    "status": "completed",
+    "created_at": "2025-07-31T03:40:25.016430",
+    "updated_at": "2025-07-31T03:41:43.966568",
+    "file_path": "sessions\\orchestration_90c48bb5-9128-48b6-b2e9-711c3d33c31b.json"
+  },
+  "42fb4464-5107-468c-a9a1-10e17dca9631": {
+    "session_id": "42fb4464-5107-468c-a9a1-10e17dca9631",
+    "project_id": "project_42fb4464",
+    "query": "Perform the research on the Tarriff development as of now",
+    "status": "completed",
+    "created_at": "2025-07-31T03:44:03.084254",
+    "updated_at": "2025-07-31T03:45:02.434108",
+    "file_path": "sessions\\orchestration_42fb4464-5107-468c-a9a1-10e17dca9631.json"
+  },
+  "f40b3c3e-b5ac-4438-8ddd-9c9070676bda": {
+    "session_id": "f40b3c3e-b5ac-4438-8ddd-9c9070676bda",
+    "project_id": "project_f40b3c3e",
+    "query": "What is the latest on Stock Market",
+    "status": "completed",
+    "created_at": "2025-07-31T03:51:50.072554",
+    "updated_at": "2025-07-31T03:53:10.347125",
+    "file_path": "sessions\\orchestration_f40b3c3e-b5ac-4438-8ddd-9c9070676bda.json"
+  }
+}
